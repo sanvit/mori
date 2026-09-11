@@ -98,6 +98,18 @@ func TestNewEnvValidation(t *testing.T) {
 	if err != nil || c.DownloadMode != "proxy" || c.PreviewMode != "proxy" || c.PresignTTL != 15*time.Minute || c.ZipMaxFiles != 200 || c.ZipMaxBytes != 20<<30 || c.ZipConcurrency != 2 {
 		t.Fatal(c, err)
 	}
+	if c.ZipDisabled {
+		t.Fatal("ZIP must be enabled by default")
+	}
+	t.Setenv("BROWSER_ZIP_ENABLED", "false")
+	if c, err = Read(); err != nil || !c.ZipDisabled {
+		t.Fatal("BROWSER_ZIP_ENABLED=false ignored", err)
+	}
+	t.Setenv("BROWSER_ZIP_ENABLED", "maybe")
+	if _, err = Read(); err == nil {
+		t.Fatal("invalid BROWSER_ZIP_ENABLED accepted")
+	}
+	t.Setenv("BROWSER_ZIP_ENABLED", "")
 	t.Setenv("BROWSER_DOWNLOAD_MODE", "presigned")
 	if _, err = Read(); err == nil {
 		t.Fatal("anonymous presigned config accepted")

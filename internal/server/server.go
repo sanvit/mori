@@ -113,6 +113,10 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/object":
 		a.withSlot(w, r, a.object)
 	case "/api/archive":
+		if a.cfg.ZipDisabled {
+			fail(w, 404, "zip_disabled", "이 서버에서는 ZIP 다운로드를 사용하지 않습니다.")
+			return
+		}
 		if r.Method != "GET" && r.Method != "POST" {
 			w.Header().Set("Allow", "GET, POST")
 			fail(w, 405, "method_not_allowed", "ZIP은 POST로 준비하고 GET으로 다운로드합니다.")
@@ -154,7 +158,7 @@ func (a *App) config(w http.ResponseWriter, r *http.Request) {
 		mode = "proxy"
 	}
 	jsonOut(w, map[string]any{"title": a.cfg.Title, "backend": a.cfg.Backend, "mode": mode, "downloadMode": a.cfg.DownloadMode,
-		"previewMode": a.cfg.PreviewMode, "zipMaxFiles": a.cfg.ZipMaxFiles, "zipMaxBytes": a.cfg.ZipMaxBytes})
+		"previewMode": a.cfg.PreviewMode, "zipEnabled": !a.cfg.ZipDisabled, "zipMaxFiles": a.cfg.ZipMaxFiles, "zipMaxBytes": a.cfg.ZipMaxBytes})
 }
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
 	prefix, cursor := r.URL.Query().Get("prefix"), r.URL.Query().Get("cursor")
