@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.git
+bin/
+mori
+__pycache__/
+*.pyc
+node_modules/
+web/vendor/
+web/mori-vendor-*/

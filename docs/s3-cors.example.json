@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://files.example.com"],
+    "AllowedMethods": ["GET"],
+    "AllowedHeaders": ["Range", "If-Range"],
+    "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

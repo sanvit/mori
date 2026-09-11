@@ -1,0 +1,1 @@
+PASS Chromium DOM fixtures: 320/360/390/768 mobile layout, 44px actions, selection bar, image fit/zoom, safe capped text, modal focus/Escape/back cleanup, native media fallback and cleanup, PDF API-double paging/zoom/password/cancellation. Not a real Media Chrome/PDF.js integration or browser-network test.

@@ -1,0 +1,5 @@
+# Optional development/test dependencies; not runtime dependencies.
+playwright
+botocore
+
+PyYAML

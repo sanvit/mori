@@ -1,0 +1,125 @@
+/* The listing stays an index. Rich controls exist only inside an open preview. */
+.preview-open { overflow: hidden; }
+.preview-dialog { width: min(1100px, calc(100vw - 72px)); height: min(820px, calc(100dvh - 64px)); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid #ffffff30; border-radius: 14px; color: #334450; background: #f5f7f8; box-shadow: 0 24px 90px #101e3545; overflow: hidden; }
+.preview-dialog::backdrop { background: #152435b8; backdrop-filter: blur(5px); }
+.preview-shell { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px 16px 26px; min-height: 79px; border-bottom: 1px solid #e7ebee; background: #fff; flex: none; }
+.preview-heading { min-width: 0; }
+.preview-heading h2 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; line-height: 1.6; }
+.preview-heading p { margin: 3px 0 0; font-size: 11px; color: #71818d; }
+.preview-actions, .preview-navigation { display: flex; align-items: center; gap: 4px; flex: none; }
+.preview-action, .preview-tool { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex: none; padding: 12px; border: 0; border-radius: 7px; background: transparent; color: #637784; cursor: pointer; touch-action: manipulation; }
+.preview-action svg, .preview-tool svg { width: 20px; height: 20px; }
+.preview-action:hover, .preview-tool:hover { background: #ecf2f6; color: #326f99; }
+.preview-action:disabled, .preview-tool:disabled { opacity: .3; }
+.close-action { margin-left: 6px; background: #f3f5f7; }
+.preview-body { display: flex; position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.preview-footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; margin: 0; padding: 4px 16px 4px 26px; border-top: 1px solid #e6ebef; background: #fff; font-size: 11px; color: #71818d; }
+#preview-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#preview-counter { min-width: 46px; text-align: center; color: #82909a; font-variant-numeric: tabular-nums; }
+.preview-message { margin: auto; padding: 28px; text-align: center; max-width: 460px; }
+.preview-message .message-icon { width: 45px; height: 45px; color: #9daebc; margin-bottom: 16px; }
+.preview-message h3, .pdf-password h3 { font-size: 16px; font-weight: 550; margin: 0 0 12px; }
+.preview-message p, .pdf-password p { margin: 0; font-size: 13px; color: #71818d; line-height: 1.9; overflow-wrap: anywhere; }
+.message-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.preview-button { display: inline-flex; justify-content: center; align-items: center; min-height: 44px; padding: 9px 16px; border: 1px solid #d9e3e9; border-radius: 7px; background: #fff; color: #47677d; font-size: 12px; }
+.preview-button:hover { background: #edf4f8; }
+.spinner { display: inline-block; width: 23px; height: 23px; border: 2px solid #d9e3ea; border-top-color: #6595b3; border-radius: 50%; margin-bottom: 12px; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Images use browser decoding and scrolling, not full-file JS Blob copies. */
+.image-preview { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+.image-stage { flex: 1; min-height: 0; width: 100%; padding: 28px; overflow: auto; display: flex; align-items: center; justify-content: center; overscroll-behavior: contain; touch-action: pan-x pan-y pinch-zoom; }
+.preview-image { display: block; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 3px; }
+.image-stage.zoomed { display: block; }
+.image-stage.zoomed .preview-image { max-width: none; max-height: none; margin: auto; }
+.image-tools { display: flex; align-items: center; gap: 4px; margin: 0 auto 16px; padding: 0 4px; border: 1px solid #e1e7ec; border-radius: 9px; background: #fff; box-shadow: 0 2px 8px #243b5010; }
+.zoom-label { min-width: 83px; text-align: center; font-size: 11px; color: #6a7a86; font-variant-numeric: tabular-nums; }
+/* Media Chrome handles native media state, keyboard control and accessibility. */
+.video-preview { display: flex; align-items: center; justify-content: center; width: 100%; background: #111820; padding: 30px; }
+.mori-player { display: block; position: relative; width: 100%; color: #fff; background: #080b10; border-radius: 9px; overflow: hidden;
+  --media-primary-color: #fff; --media-secondary-color: transparent; --media-control-background: transparent;
+  --media-control-hover-background: #ffffff1f; --media-control-padding: 12px; --media-icon-size: 20px;
+  --media-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --media-font-size: 12px; --media-range-track-height: 3px; --media-range-thumb-width: 10px;
+  --media-range-thumb-height: 10px; --media-range-thumb-border-radius: 50%; --media-range-bar-color: #83b7d7;
+  --media-range-track-background: #ffffff38; --media-range-track-border-radius: 4px;
+  --media-control-border-radius: 6px;
+}
+.mori-player video { display: block; width: 100%; max-height: calc(100dvh - 244px); aspect-ratio: 16/9; object-fit: contain; }
+.mori-player:fullscreen { width: 100%; height: 100%; border-radius: 0; display: flex; align-items: center; justify-content: center; }
+.mori-player:fullscreen video { max-height: 100%; height: 100%; aspect-ratio: auto; }
+.player-chrome { width: 100%; padding: 16px 14px 7px; background: linear-gradient(transparent, #060a13d9); }
+.player-chrome > media-time-range { width: 100%; display: flex; --media-control-padding: 6px 0; }
+.player-chrome media-control-bar { width: 100%; align-items: center; background: transparent; }
+.player-chrome media-time-display { padding: 0 7px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.player-spacer { flex: 1; min-width: 2px; }
+.player-chrome media-volume-range { width: 76px; --media-control-padding: 12px 2px; }
+.center-play { width: 62px; height: 62px; border-radius: 50%; --media-control-background: #ffffffef; --media-primary-color: #25384a; --media-control-hover-background: #fff; --media-icon-size: 24px; --media-control-padding: 19px; box-shadow: 0 6px 32px #0003; }
+.mori-player:not([mediapaused]) .center-play { display: none; }
+.native-player { background: #111820; }
+.audio-preview { width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; background: #f8fafb; }
+.audio-art { display: flex; align-items: center; justify-content: center; width: 152px; height: 152px; border-radius: 30px; margin-bottom: 25px; color: #7597ad; background: radial-gradient(ellipse at 25% 10%, #f4fafb, #dce8ed 90%); box-shadow: inset 0 0 0 1px #c6d7e06b, 0 12px 26px #405c7010; }
+.audio-art svg { width: 56px; height: 56px; stroke-width: 1.1; }
+.audio-name { font-size: 17px; font-weight: 550; text-align: center; overflow-wrap: anywhere; max-width: 100%; }
+.audio-caption { font-size: 12px; margin: 10px 0 30px; color: #7c8b96; }
+.audio-player { max-width: 650px; background: #fff; color: #526f83; border: 1px solid #e1e8ed; border-radius: 12px; box-shadow: 0 4px 20px #304c6610; --media-primary-color: #526f83; --media-control-hover-background: #eaf2f7; --media-range-track-background: #dfe8ee; --media-range-bar-color: #6698b8; }
+.audio-player .player-chrome { background: none; padding: 12px 12px 6px; }
+.audio-player audio { width: 100%; }
+/* PDF.js renders one page at a time with a bounded canvas backing store. */
+.pdf-preview { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+.pdf-tools { display: flex; align-items: center; justify-content: center; padding: 4px 16px; background: #fff; border-bottom: 1px solid #e6ebef; flex: none; gap: 4px; }
+.page-input { width: 48px; height: 34px; text-align: center; font-size: 13px; color: #476276; border: 1px solid #dce4ea; border-radius: 5px; appearance: textfield; }
+.page-input::-webkit-inner-spin-button { appearance: none; }
+.page-total { min-width: 28px; margin-right: 4px; font-size: 12px; color: #82919c; }
+.pdf-tool-space { width: 22px; }
+.pdf-stage { flex: 1; min-height: 0; padding: 16px; overflow: auto; overscroll-behavior: contain; }
+.pdf-canvas { display: block; background: #fff; box-shadow: 0 2px 14px #243c5420; margin: 0 auto; max-width: none; }
+.pdf-password { max-width: 380px; padding: 24px; margin: auto; }
+.pdf-password label { display: block; margin: 20px 0 12px; font-size: 12px; }
+.pdf-password input { display: block; width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #cbd9e2; border-radius: 7px; font-size: 16px; }
+/* Source files are plain text. No Markdown/HTML execution, no syntax-highlighter. */
+.text-preview { display: flex; flex-direction: column; min-width: 0; width: 100%; background: #fcfdfe; }
+.text-tools { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 24px; border-bottom: 1px solid #e6ecf1; background: #f5f8fa; font-size: 11px; color: #728692; }
+.text-toggle { font-size: 11px; border: 0; background: transparent; padding: 10px; min-height: 40px; color: #4c7894; }
+.preview-code { flex: 1; min-height: 0; overflow: auto; padding: 24px; margin: 0; color: #405765; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.9; tab-size: 4; }
+.preview-code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 740px) {
+  .preview-dialog { width: 100%; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .preview-dialog::backdrop { backdrop-filter: none; }
+  .preview-header { padding: calc(10px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); min-height: 76px; gap: 10px; }
+  .preview-heading h2 { font-size: 14px; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .preview-heading p { font-size: 10px; }
+  .preview-actions { gap: 0; }
+  .preview-footer { padding: 4px max(8px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); font-size: 10px; }
+  .original-action { display: none; }
+  .close-action { margin-left: 2px; }
+  .image-stage { padding: 12px; }
+  .image-tools { margin-bottom: 12px; }
+  .video-preview { padding: 0; }
+  .mori-player { border-radius: 0; }
+  .mori-player video { max-height: calc(100dvh - 162px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .player-chrome { padding: 12px 6px 4px; }
+  .player-chrome media-volume-range, .player-chrome media-pip-button, .player-chrome media-seek-forward-button, .player-chrome media-seek-backward-button { display: none; }
+  .player-chrome media-time-display { padding: 0 2px; --media-font-size: 11px; }
+  .audio-preview { padding: 24px 16px; }
+  .audio-art { width: 128px; height: 128px; border-radius: 26px; }
+  .audio-name { font-size: 16px; }
+  .audio-player { border-radius: 12px; }
+  .audio-player .player-chrome { padding: 10px 6px 4px; }
+  .pdf-tools { padding: 2px 6px; gap: 0; }
+  .pdf-tool-space { width: 8px; }
+  .page-input { font-size: 16px; width: 43px; }
+  .pdf-stage { padding: 12px; }
+  .text-tools { padding: 4px 10px 4px 16px; }
+  .preview-code { padding: 16px; font-size: 12px; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .preview-header { min-height: 54px; padding-top: 6px; padding-bottom: 6px; }
+  .preview-footer { min-height: 44px; }
+  .preview-heading p { display: none; }
+  .video-preview { padding: 0; }
+  .mori-player video { max-height: calc(100dvh - 100px); }
+  .audio-art, .audio-caption { display: none; }
+  .audio-name { margin-bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

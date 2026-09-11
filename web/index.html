@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>Files</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/preview.css">
+  <script src="/preview.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="index">
+    <header class="toolbar">
+      <nav id="breadcrumbs" class="breadcrumbs" aria-label="폴더 경로"></nav>
+      <div class="tools">
+        <div id="selection-tools" class="selection-tools" hidden>
+          <button id="clear-selection" class="clear-selection" type="button">선택 해제</button>
+          <button id="download-zip" class="zip-button" type="button" hidden>ZIP 다운로드</button>
+        </div>
+        <label class="mobile-sort"><span class="sr-only">목록 정렬</span><select id="mobile-sort" aria-label="목록 정렬"><option value="name:1">이름순</option><option value="name:-1">이름 역순</option><option value="modified:-1">최근 수정순</option><option value="size:1">작은 파일순</option><option value="size:-1">큰 파일순</option></select></label>
+        <button id="refresh" class="icon-button" type="button" title="새로고침" aria-label="새로고침">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10a8.1 8.1 0 0 0-14-3L3 10m0-6v6h6M4 14a8.1 8.1 0 0 0 14 3l3-3m0 6v-6h-6"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <h1 id="heading" class="sr-only">파일 목록</h1>
+    <div class="table-wrap">
+      <table aria-labelledby="heading">
+        <colgroup><col class="select-col"><col class="name-col"><col class="date-col"><col class="size-col"><col class="action-col"></colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="select-cell"><label class="check-hit"><input id="select-all" type="checkbox" aria-label="불러온 파일과 폴더 모두 선택" title="불러온 항목을 선택합니다. 선택한 폴더는 하위 파일까지 ZIP에 포함합니다."></label></th>
+            <th scope="col" aria-sort="ascending"><button type="button" data-sort="name">이름<span class="sort-mark" aria-hidden="true">↑</span></button></th>
+            <th scope="col" class="date-cell" aria-sort="none"><button type="button" data-sort="modified">수정일<span class="sort-mark" aria-hidden="true"></span></button></th>
+            <th scope="col" class="size-cell" aria-sort="none"><button type="button" data-sort="size">크기<span class="sort-mark" aria-hidden="true"></span></button></th>
+            <th scope="col"><span class="sr-only">다운로드</span></th>
+          </tr>
+        </thead>
+        <tbody id="files"><tr><td colspan="5" class="message">파일 목록을 불러오는 중…</td></tr></tbody>
+      </table>
+    </div>
+    <p id="notice" role="status" aria-live="polite" hidden></p>
+    <p id="error" role="alert" hidden></p>
+    <div class="pagination"><button id="load-more" type="button" hidden>더 불러오기</button></div>
+    <footer>
+      <span id="status" role="status" aria-live="polite"></span>
+    </footer>
+    <noscript>파일 목록을 보려면 JavaScript를 활성화해 주세요.</noscript>
+  </main>
+  <dialog id="preview" class="preview-dialog" aria-labelledby="preview-title" aria-describedby="preview-meta">
+    <div class="preview-shell">
+      <header class="preview-header">
+        <div class="preview-heading"><h2 id="preview-title"></h2><p id="preview-meta"></p></div>
+        <div class="preview-actions">
+          <a id="preview-original" class="preview-action original-action" target="_blank" rel="noopener noreferrer" title="원본을 새 탭에서 열기" aria-label="원본을 새 탭에서 열기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H4v17h17v-6"/></svg></a>
+          <a id="preview-download" class="preview-action" title="다운로드" aria-label="다운로드"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg></a>
+          <button id="preview-close" class="preview-action close-action" type="button" title="닫기 (Esc)" aria-label="미리보기 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        </div>
+      </header>
+      <div id="preview-body" class="preview-body" aria-busy="false"></div>
+      <footer class="preview-footer">
+        <span id="preview-hint"></span>
+        <div class="preview-navigation"><button id="preview-previous" class="preview-action" type="button" aria-label="이전 파일" title="이전 파일"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><span id="preview-counter"></span><button id="preview-next" class="preview-action" type="button" aria-label="다음 파일" title="다음 파일"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button></div>
+      </footer>
+    </div>
+  </dialog>
+</body>
+</html>

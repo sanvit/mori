@@ -1,0 +1,29 @@
+{
+  "generator": "botocore 1.43.18",
+  "cases": [
+    {
+      "method": "GET",
+      "url": "https://s3.ap-northeast-2.amazonaws.com/test-bucket/public/docs/%ED%95%9C%EA%B8%80%20%2B%26%25%23.txt?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store",
+      "token": "",
+      "signed_url": "https://s3.ap-northeast-2.amazonaws.com/test-bucket/public/docs/%ED%95%9C%EA%B8%80%20%2B%26%25%23.txt?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=TESTACCESS%2F20260909%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260909T060000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=96cdd043f93cdc919ebef0f3c77db4bd4993ea99524f6c2669b44364a07e8efd"
+    },
+    {
+      "method": "GET",
+      "url": "https://test-bucket.s3.ap-northeast-2.amazonaws.com/public/report.pdf?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store",
+      "token": "test-session+/=",
+      "signed_url": "https://test-bucket.s3.ap-northeast-2.amazonaws.com/public/report.pdf?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=TESTACCESS%2F20260909%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260909T060000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=test-session%2B%2F%3D&X-Amz-Signature=057d65f500579366551e550e4382d10b075ca5e9913319ba31e65cca3ef91afc"
+    },
+    {
+      "method": "HEAD",
+      "url": "https://objects.example.test:9000/gateway/test-bucket/a%20b.txt",
+      "token": "test-session+/=",
+      "signed_url": "https://objects.example.test:9000/gateway/test-bucket/a%20b.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=TESTACCESS%2F20260909%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260909T060000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=test-session%2B%2F%3D&X-Amz-Signature=52bc1e62680dca7dfc399f4d29317ec6237ab35131dd015fc1c28b48afd949cf"
+    },
+    {
+      "method": "GET",
+      "url": "https://objects.example.test/gateway/test-bucket/a%252Fb.txt?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store",
+      "token": "",
+      "signed_url": "https://objects.example.test/gateway/test-bucket/a%252Fb.txt?response-content-disposition=attachment%3B%20filename%3D%22a%20b.txt%22&response-content-type=text%2Fplain%3B%20charset%3Dutf-8&response-cache-control=private%2C%20no-store&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=TESTACCESS%2F20260909%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260909T060000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=8cb54af302fb3425b36b8ca4009536aae3122831c2458ce9694b9fe24bab134e"
+    }
+  ]
+}
