@@ -96,11 +96,50 @@ def run(name, env):
         leaked = [line for line in err.decode().splitlines() if "secret" in line]
         check(not leaked, leaked)
 
+def start(env):
+    p = subprocess.Popen(["/e2e/mori"], env=dict(os.environ, BROWSER_PUBLIC="true", BROWSER_LISTEN_ADDR=f"127.0.0.1:{PORT}", **env), stderr=subprocess.PIPE, cwd="/tmp")
+    for _ in range(50):
+        try:
+            if req("/healthz")[0] == 200: return p
+        except Exception: time.sleep(0.1)
+    return p
+
+def run_base_path(name, env):
+    """STORAGE_BASE_PATH publishes docs/sub/ as the root; nothing above it is reachable."""
+    p = start(dict(env, STORAGE_BASE_PATH="/docs/sub/"))
+    try:
+        s, h, b = req("/api/list"); l = json.loads(b)
+        check(s == 200 and [e["key"] for e in l["entries"]] == ["deep/", "empty/", "x.txt", "zero.txt"], ("base root", s, b))
+        check(b"docs" not in b and b"docs" not in req("/api/config")[2], "base path leaked")
+        s, h, b = req("/api/list?prefix=deep/"); check(s == 200 and json.loads(b)["entries"][0]["key"] == "deep/한글 +&%.txt", ("base child", s, b))
+        s, h, b = req("/api/object?key=x.txt"); check(s == 200 and b == b"x", ("base object", s, b))
+        s, h, b = req("/api/object?key=x.txt", headers={"Range": "bytes=0-0"}); check(s == 206 and b == b"x", ("base range", s))
+        for key in ["README.md", "a.txt", "big.bin"]:
+            s, h, b = req("/api/object?" + urllib.parse.urlencode({"key": key})); check(s == 404, ("outside base reachable", key, s))
+        for key in ["../a.txt", "../../README.md"]:
+            s, h, b = req("/api/object?" + urllib.parse.urlencode({"key": key})); check(s == 400, ("escape", key, s))
+        s, h, b = req("/api/list?prefix=../"); check(s == 400, ("escape list", s))
+        body = json.dumps({"prefix": "", "keys": ["deep/", "x.txt"]}).encode()
+        s, h, b = req("/api/archive", "POST", {"Content-Type": "application/json", "X-Mori-Request": "1"}, body)
+        check(s == 200, ("base zip prepare", s, b)); plan = json.loads(b)
+        s, h, b = req(plan["url"])
+        z = zipfile.ZipFile(io.BytesIO(b))
+        check(sorted(z.namelist()) == ["deep/", "deep/한글 +&%.txt", "x.txt"] and z.read("x.txt") == b"x", ("base zip", z.namelist()))
+    finally:
+        p.terminate(); p.communicate(timeout=10)
+    p = start(dict(env, STORAGE_BASE_PATH="docs/nope"))
+    try:
+        s, h, b = req("/api/list"); check(s == 404, ("missing base path must be 404", s, b))
+    finally:
+        p.terminate(); p.communicate(timeout=10)
+    print(f"{name} base path: PASS")
+
 failed = False
 for name in sys.argv[1:]:
-    try:
-        run(name, BASE[name])
-    except Exception as e:
-        failed = True
-        print(f"{name}: FAIL {type(e).__name__}: {e}"[:600])
+    for label, fn in [(name, run), (name + " base path", run_base_path)]:
+        try:
+            fn(name, BASE[name])
+        except Exception as e:
+            failed = True
+            print(f"{label}: FAIL {type(e).__name__}: {e}"[:600])
 sys.exit(1 if failed else 0)

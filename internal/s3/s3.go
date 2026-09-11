@@ -152,7 +152,7 @@ func (o *Origin) Request(ctx context.Context, method, key string, q url.Values, 
 // UsesProxy reports whether key's body is served through the caching proxy.
 // A proxy liveness route must not shadow an S3 object with the same key.
 func (o *Origin) UsesProxy(key string) bool {
-	return o.cfg.Proxy != nil && (o.cfg.ProxyHealthPath == "" || key != strings.TrimPrefix(o.cfg.ProxyHealthPath, "/"))
+	return o.cfg.Proxy != nil && (o.cfg.ProxyHealthPath == "" || o.cfg.ProxyPrefix+key != strings.TrimPrefix(o.cfg.ProxyHealthPath, "/"))
 }
 
 // Object fetches key (relative to the configured prefix) with GET or HEAD.
@@ -160,7 +160,8 @@ func (o *Origin) Object(ctx context.Context, method, key string, h http.Header) 
 	if !o.UsesProxy(key) {
 		return o.Request(ctx, method, o.cfg.Prefix+key, nil, h, false)
 	}
-	return o.Request(ctx, method, key, nil, h, true)
+	// The cache proxy adds S3_PREFIX itself; send only the base path.
+	return o.Request(ctx, method, o.cfg.ProxyPrefix+key, nil, h, true)
 }
 
 // List returns one page of the folder at prefix.

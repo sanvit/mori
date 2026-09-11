@@ -211,3 +211,61 @@ func TestStatAndOpenImplementBackendContract(t *testing.T) {
 		t.Fatal("unsatisfiable range opened")
 	}
 }
+
+// With STORAGE_BASE_PATH, direct requests carry S3_PREFIX plus the base path,
+// while the cache proxy (which adds S3_PREFIX itself) gets only the base path.
+func TestBasePathDirectAndProxyKeys(t *testing.T) {
+	var direct, proxied []string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("list-type") == "2" {
+			direct = append(direct, "list:"+r.URL.Query().Get("prefix"))
+			io.WriteString(w, `<ListBucketResult><CommonPrefixes><Prefix>public/team/sub/</Prefix></CommonPrefixes><Contents><Key>public/team/a.txt</Key><Size>1</Size></Contents></ListBucketResult>`)
+			return
+		}
+		direct = append(direct, r.Method+":"+r.URL.Path)
+		io.WriteString(w, "x")
+	}))
+	defer origin.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxied = append(proxied, r.URL.Path)
+		io.WriteString(w, "x")
+	}))
+	defer proxy.Close()
+	c := testConfig()
+	c.Endpoint, _ = url.Parse(origin.URL)
+	c.Prefix, c.ProxyPrefix = "public/team/", "team/"
+	o := New(c)
+	l, err := o.List(context.Background(), "", "")
+	if err != nil || len(l.Entries) != 2 || l.Entries[0].Key != "sub/" || l.Entries[1].Key != "a.txt" {
+		t.Fatalf("%+v %v", l, err)
+	}
+	if _, err = o.Stat(context.Background(), "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := o.Object(context.Background(), "GET", "a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if strings.Join(direct, ",") != "list:public/team/,HEAD:/test-bucket/public/team/a.txt,GET:/test-bucket/public/team/a.txt" {
+		t.Fatal(direct)
+	}
+	c.Proxy, _ = url.Parse(proxy.URL)
+	c.ProxyHealthPath = "/healthz"
+	o = New(c)
+	for _, key := range []string{"a.txt", "healthz"} {
+		r, err = o.Object(context.Background(), "GET", key, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+	}
+	if strings.Join(proxied, ",") != "/team/a.txt,/team/healthz" {
+		t.Fatal("proxy must receive base path without S3_PREFIX", proxied)
+	}
+	c.AccessKey, c.SecretKey, c.PresignTTL = "TESTACCESS", "secret", time.Minute
+	link, err := New(c).Presign("GET", "a.txt", true, time.Now())
+	if u, _ := url.Parse(link); err != nil || u.Path != "/test-bucket/public/team/a.txt" {
+		t.Fatal(link, err)
+	}
+}

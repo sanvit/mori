@@ -122,8 +122,9 @@ func (c *Client) entries(ctx context.Context, dir string) ([]*ftpclient.Entry, e
 	// Many servers (vsftpd among them) answer LIST of a missing path with an
 	// empty listing, and LIST of a file with that file's own line. Confirm the
 	// folder exists in its parent before trusting either shape.
-	if dir != "" && (len(out) == 0 || (len(out) == 1 && out[0].Type != ftpclient.EntryTypeFolder && out[0].Name == path.Base(strings.TrimSuffix(dir, "/")))) {
-		if err := c.requireFolder(ctx, dir); err != nil {
+	remote := c.remote(dir)
+	if remote != "/" && remote != "." && (len(out) == 0 || (len(out) == 1 && out[0].Type != ftpclient.EntryTypeFolder && out[0].Name == path.Base(remote))) {
+		if err := c.requireFolder(ctx, remote); err != nil {
 			return nil, err
 		}
 	}
@@ -136,15 +137,16 @@ func (c *Client) entries(ctx context.Context, dir string) ([]*ftpclient.Entry, e
 	return out, nil
 }
 
-// requireFolder reports 404 unless dir (ending in "/") is a folder in its parent.
-func (c *Client) requireFolder(ctx context.Context, dir string) error {
-	name := path.Base(strings.TrimSuffix(dir, "/"))
-	parent := strings.TrimSuffix(dir, name+"/")
+// requireFolder reports 404 unless the remote directory is a folder in its
+// parent. This also covers the configured root, so a mistyped FTP_PATH or
+// STORAGE_BASE_PATH is reported instead of shown as an empty folder.
+func (c *Client) requireFolder(ctx context.Context, remote string) error {
+	name, parent := path.Base(remote), path.Dir(remote)
 	sc, err := c.conn(ctx)
 	if err != nil {
 		return err
 	}
-	list, err := sc.List(c.remote(parent))
+	list, err := sc.List(parent)
 	c.release(sc, reusable(err))
 	if err != nil {
 		return mapError(err)

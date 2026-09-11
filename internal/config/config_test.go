@@ -195,3 +195,67 @@ func TestBackendSelection(t *testing.T) {
 		t.Fatal("unknown backend accepted")
 	}
 }
+
+func TestStorageBasePath(t *testing.T) {
+	t.Setenv("BROWSER_PUBLIC", "true")
+	t.Setenv("S3_BUCKET", "test-bucket")
+	t.Setenv("S3_ACCESS_KEY_ID", "")
+	t.Setenv("S3_SECRET_ACCESS_KEY", "")
+	t.Setenv("S3_SESSION_TOKEN", "")
+	t.Setenv("S3_PREFIX", "public")
+	t.Setenv("STORAGE_BASE_PATH", "/team/한글 docs/")
+	c, err := Read()
+	if err != nil || c.BasePath != "team/한글 docs/" || c.Prefix != "public/team/한글 docs/" || c.ProxyPrefix != "team/한글 docs/" {
+		t.Fatalf("%q %q %q %v", c.BasePath, c.Prefix, c.ProxyPrefix, err)
+	}
+	t.Setenv("S3_PREFIX", "")
+	t.Setenv("STORAGE_BASE_PATH", "team")
+	if c, err = Read(); err != nil || c.Prefix != "team/" || c.ProxyPrefix != "team/" {
+		t.Fatalf("%q %q %v", c.Prefix, c.ProxyPrefix, err)
+	}
+	for _, bad := range []string{"../etc", "a/../b", "a/./b", "a//b", "a\\b", "a\x1bb", strings.Repeat("x", 600)} {
+		t.Setenv("STORAGE_BASE_PATH", bad)
+		if _, err = Read(); err == nil {
+			t.Errorf("accepted STORAGE_BASE_PATH %q", bad)
+		}
+	}
+	for _, empty := range []string{"", "/", " // "} {
+		t.Setenv("STORAGE_BASE_PATH", empty)
+		if c, err = Read(); err != nil || c.BasePath != "" || c.Prefix != "" || c.ProxyPrefix != "" {
+			t.Fatalf("%q: %q %q %v", empty, c.BasePath, c.Prefix, err)
+		}
+	}
+
+	t.Setenv("S3_BUCKET", "")
+	t.Setenv("STORAGE_BASE_PATH", "shared/reports/")
+	t.Setenv("STORAGE_BACKEND", "webdav")
+	t.Setenv("WEBDAV_URL", "https://dav.example.test/remote.php/dav/")
+	if c, err = Read(); err != nil || c.WebDAV.URL.Path != "/remote.php/dav/shared/reports/" || c.Prefix != "" || c.ProxyPrefix != "" {
+		t.Fatalf("%+v %v", c.WebDAV.URL, err)
+	}
+	t.Setenv("WEBDAV_URL", "https://dav.example.test")
+	if c, err = Read(); err != nil || c.WebDAV.URL.Path != "/shared/reports/" {
+		t.Fatalf("%+v %v", c.WebDAV.URL, err)
+	}
+
+	t.Setenv("STORAGE_BACKEND", "ftp")
+	t.Setenv("FTP_ADDR", "ftp.example.test")
+	for root, want := range map[string]string{"/": "/shared/reports", "/pub": "/pub/shared/reports", "files": "files/shared/reports"} {
+		t.Setenv("FTP_PATH", root)
+		if c, err = Read(); err != nil || c.FTP.Root != want {
+			t.Fatalf("FTP_PATH=%s: %q %v", root, c.FTP.Root, err)
+		}
+	}
+
+	t.Setenv("STORAGE_BACKEND", "sftp")
+	t.Setenv("SFTP_ADDR", "sftp.example.test")
+	t.Setenv("SFTP_USERNAME", "u")
+	t.Setenv("SFTP_PASSWORD", "p")
+	t.Setenv("SFTP_INSECURE_HOST_KEY", "true")
+	for root, want := range map[string]string{".": "shared/reports", "/srv": "/srv/shared/reports"} {
+		t.Setenv("SFTP_PATH", root)
+		if c, err = Read(); err != nil || c.SFTP.Root != want {
+			t.Fatalf("SFTP_PATH=%s: %q %v", root, c.SFTP.Root, err)
+		}
+	}
+}
