@@ -8,6 +8,27 @@ import (
 	"time"
 )
 
+// isolateEnv unsets every mori setting for the duration of a test, so results
+// do not depend on the environment running the tests. Docker builds matter
+// here: platforms such as Coolify pass deployment settings as build
+// arguments, which appear as environment variables during `go test`.
+func isolateEnv(t *testing.T) {
+	t.Helper()
+	prefixes := []string{"STORAGE_", "BROWSER_", "S3_", "WEBDAV_", "FTP_", "SFTP_"}
+	exact := map[string]bool{"CACHE_ENABLED": true, "HEALTH_PATH": true, "SHUTDOWN_TIMEOUT": true}
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		match := exact[k]
+		for _, prefix := range prefixes {
+			match = match || strings.HasPrefix(k, prefix)
+		}
+		if match {
+			t.Setenv(k, "") // registers restoration of the original value
+			os.Unsetenv(k)
+		}
+	}
+}
+
 func TestValidateKeys(t *testing.T) {
 	for _, key := range []string{"../secret", "a/../b", "a/./b", "/root", "a\\b", "a//b", "a\x00b", strings.Repeat("x", 1025)} {
 		if ValidateKey(key, true) == nil {
@@ -24,6 +45,7 @@ func TestValidateKeys(t *testing.T) {
 	}
 }
 func TestConfigFailsClosed(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("S3_BUCKET", "test-bucket")
 	t.Setenv("BROWSER_USERNAME", "")
 	t.Setenv("BROWSER_PASSWORD", "")
@@ -40,6 +62,7 @@ func TestConfigFailsClosed(t *testing.T) {
 	}
 }
 func TestConfigPartialCredentialsAndBadURLs(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("BROWSER_PUBLIC", "true")
 	t.Setenv("S3_BUCKET", "test-bucket")
 	t.Setenv("S3_ACCESS_KEY_ID", "key")
@@ -54,6 +77,7 @@ func TestConfigPartialCredentialsAndBadURLs(t *testing.T) {
 	}
 }
 func TestEnvParserPreservesProcessAndLiteralSecrets(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("MORI_TEST_PROCESS", "process")
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".env")
@@ -69,6 +93,7 @@ func TestEnvParserPreservesProcessAndLiteralSecrets(t *testing.T) {
 }
 
 func TestConfigRequiresBucketWithoutFallback(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("S3_BUCKET", "")
 	t.Setenv("BROWSER_USERNAME", "")
 	t.Setenv("BROWSER_PASSWORD", "")
@@ -89,6 +114,7 @@ func TestConfigRequiresBucketWithoutFallback(t *testing.T) {
 }
 
 func TestNewEnvValidation(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("S3_BUCKET", "test-bucket")
 	t.Setenv("BROWSER_PUBLIC", "true")
 	t.Setenv("S3_ACCESS_KEY_ID", "")
@@ -130,6 +156,7 @@ func TestNewEnvValidation(t *testing.T) {
 }
 
 func TestBackendSelection(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("BROWSER_PUBLIC", "true")
 	t.Setenv("S3_BUCKET", "")
 	t.Setenv("STORAGE_BACKEND", "webdav")
@@ -197,6 +224,7 @@ func TestBackendSelection(t *testing.T) {
 }
 
 func TestStorageBasePath(t *testing.T) {
+	isolateEnv(t)
 	t.Setenv("BROWSER_PUBLIC", "true")
 	t.Setenv("S3_BUCKET", "test-bucket")
 	t.Setenv("S3_ACCESS_KEY_ID", "")
