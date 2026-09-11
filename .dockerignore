@@ -3,7 +3,7 @@
 !.env.example
 .git
 .gitignore
-mori
+/mori
 __pycache__
 *.pyc
 bin/
