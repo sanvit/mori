@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"mori-s3/internal/backend"
 	"mori-s3/internal/s3"
 )
 
@@ -312,5 +313,49 @@ func TestArchivePendingEntryBudget(t *testing.T) {
 	}
 	if _, ok, _ := s.put(archivePlan{Items: make([]archiveItem, 1)}, now); !ok {
 		t.Fatal("entry capacity not released")
+	}
+}
+
+// STORAGE_BASE_PATH=docs/ on top of S3_PREFIX=public/: the browser root is the
+// base folder, keys never mention it, and nothing outside it is reachable.
+func TestBasePathConfinesBrowserRoot(t *testing.T) {
+	data := map[string]string{"docs/a.txt": "root", "docs/sub/x.txt": "x", "elsewhere/leak.txt": "secret", "docs.txt": "sibling"}
+	a, stats := recursiveFixture(t, data, 1000)
+	a.cfg.Prefix, a.cfg.ProxyPrefix, a.cfg.BasePath = "public/docs/", "docs/", "docs/"
+	a.s3 = s3.New(a.cfg)
+	a.store = a.s3
+	w := call(a, "GET", "/api/list", nil)
+	var l backend.Listing
+	json.Unmarshal(w.Body.Bytes(), &l)
+	if w.Code != 200 || len(l.Entries) != 2 || l.Entries[0].Key != "sub/" || l.Entries[1].Key != "a.txt" || strings.Contains(w.Body.String(), "docs") || strings.Contains(w.Body.String(), "public") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w = call(a, "GET", "/api/config", nil); strings.Contains(w.Body.String(), "docs") {
+		t.Fatal("config leaked base path", w.Body.String())
+	}
+	if w = call(a, "HEAD", "/api/object?key=a.txt", nil); w.Code != 200 || w.Header().Get("Content-Length") != "4" {
+		t.Fatal(w.Code)
+	}
+	for _, key := range []string{"../elsewhere/leak.txt", "../docs.txt", "/elsewhere/leak.txt"} {
+		if w = call(a, "GET", "/api/object?"+url.Values{"key": {key}}.Encode(), nil); w.Code != 400 {
+			t.Fatal("escaped base path", key, w.Code)
+		}
+	}
+	if w = call(a, "HEAD", "/api/object?key=elsewhere/leak.txt", nil); w.Code != 404 {
+		t.Fatal(w.Code)
+	}
+	b, _ := json.Marshal(map[string]any{"prefix": "", "keys": []string{"sub/", "a.txt"}})
+	w = postArchive(a, string(b), nil)
+	var plan struct{ URL, Filename string }
+	json.Unmarshal(w.Body.Bytes(), &plan)
+	if w.Code != 200 || plan.Filename != "files.zip" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	got := inspectZIP(t, a, plan.URL)
+	if len(got) != 2 || got["a.txt"] != "root" || got["sub/x.txt"] != "x" {
+		t.Fatal(got)
+	}
+	if stats.Gets.Load() != 2 {
+		t.Fatal(stats.Gets.Load())
 	}
 }

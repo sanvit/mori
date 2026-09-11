@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -15,16 +16,21 @@ import (
 type Config struct {
 	Listen, Title, Bucket, Region, Prefix, AccessKey, SecretKey, SessionToken string
 	Endpoint, Proxy                                                           *url.URL
-	PathStyle, Public, CacheEnabled                                           bool
-	ProxyHealthPath                                                           string
-	Username, Password                                                        string
-	ListingTTL                                                                time.Duration
-	ListingMax                                                                int
-	DownloadMode, PreviewMode                                                 string
-	PresignTTL                                                                time.Duration
-	PresignEndpoint                                                           *url.URL
-	ZipMaxFiles, ZipConcurrency                                               int
-	ZipMaxBytes                                                               int64
+	// BasePath (STORAGE_BASE_PATH) is the folder published as the browser
+	// root, relative to the backend root. It is "" or ends with "/". For S3 it
+	// is already folded into Prefix; ProxyPrefix is the part the cache proxy
+	// does not add itself, since s3-proxy applies S3_PREFIX on its own.
+	BasePath, ProxyPrefix           string
+	PathStyle, Public, CacheEnabled bool
+	ProxyHealthPath                 string
+	Username, Password              string
+	ListingTTL                      time.Duration
+	ListingMax                      int
+	DownloadMode, PreviewMode       string
+	PresignTTL                      time.Duration
+	PresignEndpoint                 *url.URL
+	ZipMaxFiles, ZipConcurrency     int
+	ZipMaxBytes                     int64
 	// ZipDisabled turns off multi-file ZIP downloads (BROWSER_ZIP_ENABLED=false).
 	// The zero value keeps ZIP enabled, matching the default.
 	ZipDisabled bool
@@ -181,6 +187,29 @@ func Read() (Config, error) {
 	if err != nil {
 		return c, err
 	}
+	if c.BasePath, err = basePath(Env("STORAGE_BASE_PATH", "")); err != nil {
+		return c, err
+	}
+	if c.BasePath != "" {
+		dir := strings.TrimSuffix(c.BasePath, "/")
+		switch c.Backend {
+		case "s3":
+			c.Prefix += c.BasePath
+			c.ProxyPrefix = c.BasePath
+			if len(c.Prefix) > 512 {
+				return c, fmt.Errorf("S3_PREFIX and STORAGE_BASE_PATH together must be at most 512 bytes")
+			}
+		case "webdav":
+			u := *c.WebDAV.URL
+			u.Path = strings.TrimSuffix(u.Path, "/") + "/" + c.BasePath
+			u.RawPath = ""
+			c.WebDAV.URL = &u
+		case "ftp":
+			c.FTP.Root = path.Join(c.FTP.Root, dir)
+		case "sftp":
+			c.SFTP.Root = path.Join(c.SFTP.Root, dir)
+		}
+	}
 	if c.Backend != "s3" {
 		if c.DownloadMode == "presigned" || c.PreviewMode == "presigned" {
 			return c, fmt.Errorf("presigned delivery modes require STORAGE_BACKEND=s3")
@@ -312,6 +341,24 @@ func readSFTP(c *Config) error {
 		return err
 	}
 	return nil
+}
+
+// basePath normalizes STORAGE_BASE_PATH to "" or "a/b/". Leading and trailing
+// slashes are optional; dot segments and other unsafe keys are rejected, so the
+// published root can never be widened with "..".
+func basePath(v string) (string, error) {
+	v = strings.Trim(strings.TrimSpace(v), "/")
+	if v == "" {
+		return "", nil
+	}
+	v += "/"
+	if len(v) > 512 {
+		return "", fmt.Errorf("STORAGE_BASE_PATH must be at most 512 bytes")
+	}
+	if err := ValidateKey(v, false); err != nil {
+		return "", fmt.Errorf("invalid STORAGE_BASE_PATH: %w", err)
+	}
+	return v, nil
 }
 
 // hostPort validates host[:port], adding the default port when missing.

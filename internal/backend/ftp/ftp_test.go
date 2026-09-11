@@ -187,3 +187,26 @@ func TestStatMatchesListingWithoutMLST(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingRootWithLenientListing(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "pub/team"), 0o755)
+	os.MkdirAll(filepath.Join(root, "docs/sub/empty"), 0o755)
+	server := ftpserver.NewFtpServer(&driver{fs: emptyListFs{afero.NewBasePathFs(afero.NewOsFs(), root)}})
+	if err := server.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	go server.Serve()
+	defer server.Stop()
+	var ue *backend.UpstreamError
+	for _, missing := range []string{"/pub/teem", "pub/teem"} {
+		c := New(config.FTPConfig{Addr: server.Addr(), Username: "tester", Password: "secret", Root: missing})
+		if _, err := c.List(context.Background(), "", ""); !errors.As(err, &ue) || ue.Status != 404 {
+			t.Fatal("mistyped root listed as empty", missing, err)
+		}
+	}
+	c := New(config.FTPConfig{Addr: server.Addr(), Username: "tester", Password: "secret", Root: "/pub/team"})
+	if l, err := c.List(context.Background(), "", ""); err != nil || len(l.Entries) != 0 {
+		t.Fatal("existing empty root rejected", l, err)
+	}
+}
