@@ -63,6 +63,9 @@ func main() {
 		}
 	}
 	log.Printf("mori %s | %s | listen %s", version, mode, cfg.Listen)
+	if cfg.ZipDisabled {
+		log.Print("ZIP downloads disabled (BROWSER_ZIP_ENABLED=false)")
+	}
 	if cfg.Public {
 		log.Print("WARNING: all visitors may list and download the configured bucket/prefix; protect it with a TLS/auth gateway if necessary")
 	}

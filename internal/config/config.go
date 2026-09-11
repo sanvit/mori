@@ -25,6 +25,9 @@ type Config struct {
 	PresignEndpoint                                                           *url.URL
 	ZipMaxFiles, ZipConcurrency                                               int
 	ZipMaxBytes                                                               int64
+	// ZipDisabled turns off multi-file ZIP downloads (BROWSER_ZIP_ENABLED=false).
+	// The zero value keeps ZIP enabled, matching the default.
+	ZipDisabled bool
 	// Backend selects the storage: s3 (default), webdav, ftp, or sftp. The S3
 	// fields above, the caching proxy, and presigned delivery apply to s3 only.
 	Backend string
@@ -186,6 +189,11 @@ func Read() (Config, error) {
 			return c, fmt.Errorf("BROWSER_PROXY_URL only applies to STORAGE_BACKEND=s3")
 		}
 	}
+	zipEnabled, err := envBool("BROWSER_ZIP_ENABLED", true)
+	if err != nil {
+		return c, err
+	}
+	c.ZipDisabled = !zipEnabled
 	if c.ZipMaxFiles, err = boundedInt("BROWSER_ZIP_MAX_FILES", "200", 1, 10000); err != nil {
 		return c, err
 	}

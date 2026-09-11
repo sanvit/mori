@@ -325,3 +325,40 @@ func TestArchiveUsesCacheProxyForBodyOnly(t *testing.T) {
 		t.Fatal("ZIP bypassed configured body cache", w.Code, heads.Load(), gets.Load(), calls.Load())
 	}
 }
+
+func TestArchiveDisabled(t *testing.T) {
+	a, heads, gets := archiveFixture(t, nil)
+	link := prepareZIP(t, a, "docs/a.txt")
+	a.cfg.ZipDisabled = true
+	var cfg map[string]any
+	json.Unmarshal(call(a, "GET", "/api/config", nil).Body.Bytes(), &cfg)
+	if cfg["zipEnabled"] != false {
+		t.Fatal("config must report ZIP disabled", cfg)
+	}
+	before := heads.Load()
+	for _, w := range []*httptest.ResponseRecorder{
+		postArchive(a, `{"prefix":"docs/","keys":["docs/a.txt"]}`, nil),
+		call(a, "GET", link, nil),
+		call(a, "HEAD", "/api/archive", nil),
+	} {
+		if w.Code != 404 || !strings.Contains(w.Body.String(), "zip_disabled") {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if heads.Load() != before || gets.Load() != 0 {
+		t.Fatal("disabled ZIP reached storage")
+	}
+	a.cfg.Username, a.cfg.Password = "admin", "test-password"
+	if w := postArchive(a, `{"prefix":"docs/","keys":["docs/a.txt"]}`, nil); w.Code != 401 {
+		t.Fatal("disabled ZIP must still require auth first", w.Code)
+	}
+	a.cfg.Username, a.cfg.Password = "", ""
+	if w := call(a, "HEAD", "/api/object?key=docs/a.txt&download=1", nil); w.Code != 200 || w.Header().Get("Content-Length") != "5" {
+		t.Fatal("single-file download must keep working", w.Code)
+	}
+	a.cfg.ZipDisabled = false
+	json.Unmarshal(call(a, "GET", "/api/config", nil).Body.Bytes(), &cfg)
+	if cfg["zipEnabled"] != true {
+		t.Fatal(cfg)
+	}
+}

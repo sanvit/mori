@@ -4,7 +4,8 @@
 - 목록·미리보기·개별 다운로드·Range·HEAD·조건부 요청·재귀 ZIP을 모든 백엔드에서 지원.
 - `presigned` 전달과 `BROWSER_PROXY_URL` 캐시는 S3 전용. 다른 백엔드에서 지정하면 시작 오류.
 - SFTP 호스트 키 검증 기본 적용(`SFTP_KNOWN_HOSTS`). 해제는 `SFTP_INSECURE_HOST_KEY=true`로 명시.
-- `/api/config`에 `backend` 추가. 오류 메시지를 백엔드 이름에 맞춤. API 오류 코드는 유지.
+- `BROWSER_ZIP_ENABLED=false`로 ZIP 다운로드를 끌 수 있음. 기본값은 켜짐. 끄면 선택 체크박스가 사라지고 `/api/archive`는 404.
+- `/api/config`에 `backend`, `zipEnabled` 추가. 오류 메시지를 백엔드 이름에 맞춤. API 오류 코드는 유지.
 - Go 1.26 필요. 새 의존성: `github.com/jlaffaye/ftp`, `github.com/pkg/sftp`, `golang.org/x/crypto`.
 - 검증: 백엔드별 Go 단위 검사(인프로세스 WebDAV·FTP·SFTP 서버)와 Apache WebDAV·vsftpd·OpenSSH 실서버 검사(`tests/backends_e2e.sh`).
 

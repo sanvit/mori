@@ -119,5 +119,32 @@ with sync_playwright() as p:
     expect(page.locator('.message')).to_have_text('이 폴더는 비어 있습니다.')
     expect(page.locator('#select-all')).to_be_disabled()
     assert not errors,errors
+
+    # BROWSER_ZIP_ENABLED=false: no selection column, toolbar, or archive calls.
+    page=browser.new_page(viewport={'width':1360,'height':900},timezone_id='Asia/Seoul')
+    page.on('pageerror',lambda e:errors.append(str(e)))
+    page.set_content(html)
+    page.evaluate("""() => {
+      globalThis.calls = [];
+      globalThis.fetch = async (url, options={}) => {
+        calls.push({url, method:options.method || 'GET'});
+        if (url.startsWith('/api/config')) return new Response(JSON.stringify({title:'Files',zipEnabled:false,zipMaxFiles:4,zipMaxBytes:1073741824,downloadMode:'proxy',previewMode:'proxy'}));
+        return new Response(JSON.stringify({entries:[{key:'documents/',name:'documents',folder:true,size:0,modified:''},{key:'README.md',name:'README.md',folder:false,size:40,modified:'2026-09-09T06:00:00Z'}],prefix:''}));
+      };
+    }""")
+    page.add_script_tag(content=(root/'web/app.js').read_text())
+    expect(page.locator('.file-row')).to_have_count(1)
+    expect(page.locator('#select-all')).to_have_count(0)
+    assert page.locator('input[type=checkbox], col.select-col, .select-cell').count()==0
+    expect(page.locator('#selection-tools')).not_to_be_visible()
+    assert page.locator('thead th').count()==page.locator('tbody tr.file-row td').count()==4
+    expect(page.locator('.file-row .download')).to_have_attribute('href', '/api/object?key=README.md&download=1')
+    page.evaluate("""() => { globalThis.fetch = async () => new Response(JSON.stringify({entries:[],prefix:'empty/'})); location.hash = '#/empty/'; }""")
+    expect(page.locator('.message')).to_have_text('이 폴더는 비어 있습니다.')
+    assert page.locator('.message').get_attribute('colspan')=='4'
+    assert not page.evaluate("calls.some(c => c.url.startsWith('/api/archive'))")
+    page.set_viewport_size({'width':390,'height':844})
+    assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
+    assert not errors,errors
     browser.close()
-print('PASS Chromium DOM fixtures: search-free UI, file/folder selection with recursive ZIP keys, paging/sort persistence, ZIP prepare/native-link initiation, server errors, preparation cancel, selection limit, safe names, navigation, mobile, empty state')
+print('PASS Chromium DOM fixtures: search-free UI, file/folder selection with recursive ZIP keys, paging/sort persistence, ZIP prepare/native-link initiation, server errors, preparation cancel, selection limit, safe names, navigation, mobile, empty state, ZIP disabled via config')

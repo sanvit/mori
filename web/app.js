@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { title: 'Files', prefix: '', entries: [], cursor: '', sort: 'name', direction: 1, loading: false, controller: null, error: '', selected: new Set(), zipPreparing: false, zipController: null, zipMaxFiles: 200, zipMaxBytes: 20 * 1024 ** 3, downloadMode: 'proxy', previewMode: 'proxy', notice: '' };
+  const state = { title: 'Files', prefix: '', entries: [], cursor: '', sort: 'name', direction: 1, loading: false, controller: null, error: '', selected: new Set(), zipPreparing: false, zipController: null, zipEnabled: true, zipMaxFiles: 200, zipMaxBytes: 20 * 1024 ** 3, downloadMode: 'proxy', previewMode: 'proxy', notice: '' };
   const compareNames = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' }).compare;
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -146,6 +146,10 @@
       download.append(icon('download'));
       action.append(download);
     }
+    if (!state.zipEnabled) {
+      row.append(nameCell, date, size, action);
+      return row;
+    }
     const selectCell = element('td', 'select-cell');
     if (!parent) {
       const label = element('label', 'check-hit');
@@ -182,7 +186,7 @@
     if (!entries.length) {
       const row = element('tr', 'message-row');
       const message = state.loading ? '파일 목록을 불러오는 중…' : state.error ? '목록을 불러오지 못했습니다.' : state.cursor ? '다음 페이지에 항목이 더 있습니다.' : '이 폴더는 비어 있습니다.';
-      const cell = element('td', 'message', message); cell.colSpan = 5; row.append(cell); fragment.append(row);
+      const cell = element('td', 'message', message); cell.colSpan = state.zipEnabled ? 5 : 4; row.append(cell); fragment.append(row);
     }
     $('files').replaceChildren(fragment);
     const folders = entries.filter(e => e.folder).length;
@@ -207,6 +211,13 @@
     renderSelection();
   }
   function renderSelection() {
+    $('notice').hidden = !state.notice;
+    $('notice').textContent = state.notice;
+    if (!state.zipEnabled) {
+      $('selection-tools').hidden = true;
+      document.body.classList.remove('has-selection');
+      return;
+    }
     const items = state.entries;
     const selected = state.selected.size;
     document.querySelectorAll('[data-select-key]').forEach(checkbox => {
@@ -223,11 +234,19 @@
     $('download-zip').hidden = !selected;
     $('download-zip').disabled = state.zipPreparing || state.loading;
     $('download-zip').textContent = state.zipPreparing ? '확인 중…' : `ZIP 다운로드 (${selected})`;
-    $('notice').hidden = !state.notice;
-    $('notice').textContent = state.notice;
+  }
+  // BROWSER_ZIP_ENABLED=false: drop the selection column entirely. A missing
+  // flag (older servers) keeps ZIP enabled.
+  function disableZIP() {
+    state.zipEnabled = false;
+    state.selected.clear();
+    state.zipController?.abort(); state.zipController = null; state.zipPreparing = false;
+    document.querySelector('col.select-col')?.remove();
+    $('select-all')?.closest('th')?.remove();
+    $('selection-tools').hidden = true;
   }
   async function downloadZIP() {
-    if (!state.selected.size || state.zipPreparing) return;
+    if (!state.zipEnabled || !state.selected.size || state.zipPreparing) return;
     const keys = [...state.selected];
     const estimatedSize = state.entries.filter(e => !e.folder && state.selected.has(e.key)).reduce((n, e) => n + (e.size || 0), 0);
     if (estimatedSize > state.zipMaxBytes) {
@@ -321,6 +340,7 @@
     if (Number.isFinite(config.zipMaxBytes) && config.zipMaxBytes > 0) state.zipMaxBytes = config.zipMaxBytes;
     state.downloadMode = config.downloadMode === 'presigned' ? 'presigned' : 'proxy';
     state.previewMode = config.previewMode === 'presigned' ? 'presigned' : 'proxy';
+    if (config.zipEnabled === false) disableZIP();
     renderBreadcrumbs(); render();
   }).catch(() => { /* The listing request reports any connection or authentication error. */ });
   load();
