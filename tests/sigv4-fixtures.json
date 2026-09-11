@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/?list-type=2&delimiter=%2F&prefix=%ED%95%9C%EA%B8%80%20%2B%26%2F&continuation-token=a%2Bb%2F%3D",
+    "token": "",
+    "authorization": "AWS4-HMAC-SHA256 Credential=TESTACCESS/20260909/ap-northeast-2/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=37dc142d70914a74a2a228d58fdef20585da94cce5ad89962ed52ecbe1beab6d"
+  },
+  {
+    "url": "https://s3.ap-northeast-2.amazonaws.com/test-bucket/a%20%2B%26%25%23.txt",
+    "token": "test-session-token",
+    "authorization": "AWS4-HMAC-SHA256 Credential=TESTACCESS/20260909/ap-northeast-2/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=a6401a338374da7f9547ca5e4a1da8a22f40d8484e03e187f64d29fffa09cc2a"
+  }
+]

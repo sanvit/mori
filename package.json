@@ -1,0 +1,10 @@
+{
+  "name": "mori-preview-assets",
+  "private": true,
+  "version": "0.5.0",
+  "description": "Version pins only. tools/vendor.py copies browser assets; Node is not used at runtime.",
+  "dependencies": {
+    "media-chrome": "4.19.2",
+    "pdfjs-dist": "6.3.289"
+  }
+}

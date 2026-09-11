@@ -1,0 +1,136 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+func TestPreviewSourceModesAndNoOriginBodyRead(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("preview descriptor must not request any origin object/listing")
+		w.WriteHeader(500)
+	}))
+	defer s.Close()
+	for _, mode := range []string{"proxy", "presigned"} {
+		c := testConfig()
+		c.Endpoint, _ = url.Parse(s.URL)
+		c.PreviewMode = mode
+		c.AccessKey = "preview-test-access"
+		c.SecretKey = "preview-test-secret"
+		c.SessionToken = "preview-test-session"
+		a := New(c)
+		key := "하위 폴더/이미지 +&.png"
+		w := call(a, "GET", "/api/preview?"+url.Values{"key": {key}}.Encode(), nil)
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		var source map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &source); err != nil {
+			t.Fatal(err)
+		}
+		if source["kind"] != "image" || source["mode"] != mode {
+			t.Fatal(source)
+		}
+		if w.Header().Get("Cache-Control") != "private, no-store" {
+			t.Error("bearer response must not be cached")
+		}
+		if strings.Contains(w.Body.String(), c.SecretKey) {
+			t.Error("secret leaked")
+		}
+		u, err := url.Parse(source["url"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode == "proxy" {
+			if u.Host != "" || u.Path != "/api/object" || u.Query().Get("key") != key {
+				t.Fatal(u)
+			}
+		} else {
+			if u.Query().Get("X-Amz-Signature") == "" || u.Query().Get("X-Amz-SignedHeaders") != "host" {
+				t.Fatal("missing GetObject signature")
+			}
+			if u.Query().Get("response-content-type") != "image/png" || !strings.HasPrefix(u.Query().Get("response-content-disposition"), "inline") {
+				t.Error("incorrect signed presentation")
+			}
+			if source["expiresAt"] == nil {
+				t.Error("missing expiry")
+			}
+		}
+		w = call(a, "GET", "/api/preview?key=archive.zip", nil)
+		if strings.Contains(w.Body.String(), "X-Amz-") || strings.Contains(w.Body.String(), `"url"`) {
+			t.Error("unsupported preview was signed")
+		}
+		for _, bad := range []string{"", "../test.jpg", "folder/", "/test.jpg", "folder//test.jpg"} {
+			w = call(a, "GET", "/api/preview?"+url.Values{"key": {bad}}.Encode(), nil)
+			if w.Code != 400 {
+				t.Errorf("accepted key %q", bad)
+			}
+		}
+		w = call(a, "HEAD", "/api/preview?key=test.jpg", nil)
+		if w.Code != 405 || w.Header().Get("Location") != "" || strings.Contains(w.Body.String(), "X-Amz-") {
+			t.Error("HEAD presign must not be exposed")
+		}
+	}
+}
+func TestPreviewSourceAuthentication(t *testing.T) {
+	c := testConfig()
+	c.Username = "reader"
+	c.Password = "test-password"
+	a := New(c)
+	for _, route := range []string{"/api/preview?key=test.png", "/preview.js", "/preview.css", "/vendor/fake.js"} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("GET", route, nil))
+		if w.Code != 401 {
+			t.Errorf("unauthenticated %s status %d", route, w.Code)
+		}
+	}
+}
+func TestPreviewCSPAndAssetRouting(t *testing.T) {
+	for _, pathStyle := range []bool{true, false} {
+		c := testConfig()
+		c.PreviewMode = "presigned"
+		c.PathStyle = pathStyle
+		c.Endpoint, _ = url.Parse("http://private-storage:9000")
+		c.PresignEndpoint, _ = url.Parse("https://objects.example.test:8443/base")
+		c.Bucket = "assets"
+		a := New(c)
+		policy := a.contentSecurityPolicy()
+		host := "https://objects.example.test:8443"
+		if !pathStyle {
+			host = "https://assets.objects.example.test:8443"
+		}
+		if !strings.Contains(policy, host) || strings.Contains(policy, "private-storage") || strings.Contains(policy, "https:") && !strings.Contains(policy, host) {
+			t.Fatal(policy)
+		}
+		if strings.Contains(policy, "'unsafe-eval'") || !strings.Contains(policy, "worker-src 'self'") || !strings.Contains(policy, "frame-src 'none'") {
+			t.Fatal("unsafe preview CSP", policy)
+		}
+		c.PreviewMode = "proxy"
+		if strings.Contains(New(c).contentSecurityPolicy(), "objects.example") {
+			t.Error("proxy mode whitelists unnecessary origin")
+		}
+	}
+	a := New(testConfig())
+	for _, route := range []string{"/", "/preview.js", "/preview.css", "/app.js", "/styles.css"} {
+		w := call(a, "GET", route, nil)
+		if w.Code != 200 || w.Body.Len() == 0 || w.Header().Get("ETag") == "" {
+			t.Fatal(route, w.Code)
+		}
+		if strings.HasSuffix(route, ".js") && !strings.Contains(w.Header().Get("Content-Type"), "javascript") {
+			t.Fatal("invalid module MIME")
+		}
+		cached := call(a, "GET", route, http.Header{"If-None-Match": {w.Header().Get("ETag")}})
+		if cached.Code != 304 {
+			t.Error("static ETag not respected")
+		}
+	}
+	for _, route := range []string{"/vendor/", "/vendor/../app.js", "/vendor/../../config.go", "/package.json", "/.env"} {
+		if call(a, "GET", route, nil).Code != 404 {
+			t.Error("unexpected asset access", route)
+		}
+	}
+}
