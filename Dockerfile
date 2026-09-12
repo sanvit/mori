@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Dependencies are obtained ONLY at image build time. Browser playback is self-hosted.
-FROM python:3.13-alpine AS assets
+FROM python:3.14-alpine AS assets
 WORKDIR /src
 COPY package.json ./
 COPY tools/vendor.py tools/vendor.py
