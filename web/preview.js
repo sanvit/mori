@@ -107,17 +107,17 @@
     $('preview-meta').textContent = [labels[s.kind], size(entry.size)].filter(Boolean).join(' · ');
     $('preview-download').href = objectURL(entry, true); $('preview-download').download = entry.name;
     $('preview-original').href = objectURL(entry);
-    $('preview-hint').textContent = '미리보기';
     const loading = el('div', 'preview-message'); loading.append(el('span', 'spinner'), el('p', '', '불러오는 중…'));
     body.replaceChildren(loading); body.setAttribute('aria-busy', 'true'); navigation();
     try {
       s.source = await descriptor(s);
       if (!current(s)) return;
       s.kind = s.source.kind; dialog.dataset.kind = s.kind;
-      $('preview-hint').textContent = s.source.mode === 'presigned' ? 'S3 직접 미리보기' : '미리보기';
+      $('preview-meta').textContent = [s.source.renderHTML ? 'HTML' : labels[s.kind], size(entry.size)].filter(Boolean).join(' · ');
       if (s.kind === 'image') await image(s);
       else if (s.kind === 'audio' || s.kind === 'video') await media(s);
       else if (s.kind === 'pdf') await pdf(s);
+      else if (s.kind === 'text' && s.source.renderHTML) html(s);
       else if (s.kind === 'text') await text(s);
       else message(s, '다운로드해서 열 수 있는 파일입니다.', '이 형식은 브라우저 안에서 미리보기를 제공하지 않습니다.', false);
     } catch (e) {
@@ -150,7 +150,7 @@
     const caption = el('span', 'zoom-label', '화면에 맞춤');
     controls.append(button('축소', () => { factor = Math.max(.25, factor - .25); update(); }, 'minus'), caption, button('확대', () => { factor = Math.min(4, factor + .25); update(); }, 'plus'), button('화면에 맞춤', () => { factor = 1; update(); }, 'fit'));
     img.addEventListener('dblclick', () => { factor = factor === 1 ? 2 : 1; update(); });
-    img.addEventListener('load', () => { if (current(s)) { body.setAttribute('aria-busy', 'false'); $('preview-hint').textContent = `${img.naturalWidth} × ${img.naturalHeight}`; } }, { once: true });
+    img.addEventListener('load', () => { if (current(s)) { body.setAttribute('aria-busy', 'false'); } }, { once: true });
     img.addEventListener('error', () => error(s, '이 이미지를 표시할 수 없습니다.'), { once: true });
     s.cleanups.push(() => { img.removeAttribute('src'); });
     wrap.append(stage, controls); body.replaceChildren(wrap); img.src = s.source.url;
@@ -196,10 +196,19 @@
       if (current(s)) {
         // A packaging/network failure must not leave the user without playback controls.
         content.controls = true; controller.classList.add('native-player');
-        $('preview-hint').textContent = '기본 플레이어 · 사용자 지정 컨트롤을 불러오지 못했습니다.';
         body.setAttribute('aria-busy', 'false');
       }
     }
+  }
+  function html(s) {
+    const frame = el('iframe', 'html-preview');
+    frame.title = s.entry.name;
+    frame.setAttribute('sandbox', s.source.htmlScripts ? 'allow-scripts' : '');
+    frame.referrerPolicy = 'no-referrer';
+    frame.addEventListener('load', () => { if (current(s)) body.setAttribute('aria-busy', 'false'); });
+    s.cleanups.push(() => { frame.src = 'about:blank'; });
+    // A separate response supplies the configured CSP; never grant same-origin access.
+    frame.src = s.source.url; body.replaceChildren(frame);
   }
   async function text(s) {
     const response = await fetch(s.source.url, { signal: s.abort.signal, credentials: s.source.mode === 'presigned' ? 'omit' : 'same-origin', headers: Number(s.entry.size) === 0 ? {} : { Range: `bytes=0-${MAX_TEXT - 1}` } });
@@ -229,7 +238,7 @@
     pdfPromise ||= import(LIB.pdf).catch(e => { pdfPromise = null; throw e; });
     let pdfjs;
     try { pdfjs = await pdfPromise; }
-    catch { if (current(s)) message(s, 'PDF 뷰어를 불러오지 못했습니다.', '서버의 PDF.js 정적 파일을 확인해 주세요. 원본 열기 또는 다운로드로 확인할 수 있습니다.'); return; }
+    catch { if (current(s)) message(s, 'PDF 뷰어를 불러오지 못했습니다.', '새 탭에서 보기 또는 다운로드로 확인할 수 있습니다.'); return; }
     if (!current(s)) return;
     pdfjs.GlobalWorkerOptions.workerSrc = LIB.worker;
     const task = pdfjs.getDocument({
@@ -238,9 +247,10 @@
       standardFontDataUrl: LIB.base + 'standard_fonts/',
       isEvalSupported: false, enableXfa: false, useSystemFonts: true,
       disableAutoFetch: true, disableStream: true, rangeChunkSize: 256 * 1024,
-      maxImageSize: 32 * 1024 * 1024, canvasMaxAreaInBytes: 32 * 1024 * 1024
+      isOffscreenCanvasSupported: false, isImageDecoderSupported: false,
+      maxImageSize: 16 * 1024 * 1024, canvasMaxAreaInBytes: 16 * 1024 * 1024
     });
-    let renderTask = null, page = null, timer = null, requestID = 0, destroyed = false;
+    let renderTask = null, timer = null, requestID = 0, destroyed = false;
     s.cleanups.push(() => { destroyed = true; requestID++; clearTimeout(timer); renderTask?.cancel(); task.destroy().catch(() => {}); });
     task.onPassword = (submit, reason) => {
       if (!current(s)) return;
@@ -256,65 +266,90 @@
     catch (e) { if (current(s)) error(s, 'PDF를 열 수 없습니다.'); return; }
     if (!current(s)) return;
     const wrap = el('div', 'pdf-preview'), toolbar = el('div', 'pdf-tools'), stage = el('div', 'pdf-stage');
-    const canvas = el('canvas', 'pdf-canvas'); canvas.setAttribute('role', 'img'); stage.append(canvas);
-    // A screen-reader text equivalent, not clickable document links or PDF scripting.
-    const accessible = el('div', 'sr-only'); accessible.setAttribute('role', 'document'); stage.append(accessible);
-    let number = 1, zoom = 1;
-    const input = el('input', 'page-input'); input.type = 'number'; input.min = '1'; input.max = String(doc.numPages); input.value = '1'; input.inputMode = 'numeric'; input.setAttribute('aria-label', 'PDF 페이지');
-    const total = el('span', 'page-total', '/ ' + doc.numPages);
-    const prev = button('이전 페이지', () => jump(number - 1), 'left');
-    const next = button('다음 페이지', () => jump(number + 1), 'right');
-    const out = button('축소', () => { zoom = Math.max(.5, zoom - .25); render(); }, 'minus');
-    const into = button('확대', () => { zoom = Math.min(3, zoom + .25); render(); }, 'plus');
-    const fit = button('폭에 맞춤', () => { zoom = 1; render(); }, 'fit');
-    toolbar.append(prev, input, total, next, el('span', 'pdf-tool-space'), out, into, fit);
+    let zoom = 1, running = false, pending = false;
+    const pages = [];
+    const total = el('span', 'page-total', doc.numPages + ' 페이지');
+    const out = button('축소', () => { zoom = Math.max(.5, zoom - .25); layout(); }, 'minus');
+    const into = button('확대', () => { zoom = Math.min(3, zoom + .25); layout(); }, 'plus');
+    const fit = button('폭에 맞춤', () => { zoom = 1; layout(); }, 'fit');
+    toolbar.append(total, el('span', 'pdf-tool-space'), out, into, fit);
+    stage.tabIndex = 0; stage.setAttribute('aria-label', 'PDF 페이지 연속 스크롤');
     wrap.append(toolbar, stage); body.replaceChildren(wrap);
-    function jump(value) { if (!Number.isFinite(value)) return; number = Math.min(doc.numPages, Math.max(1, Math.trunc(value))); input.value = String(number); render(); }
-    input.addEventListener('change', () => jump(input.valueAsNumber));
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); jump(input.valueAsNumber); input.blur(); } });
-    async function render() {
-      const id = ++requestID;
-      renderTask?.cancel();
-      if (renderTask) { try { await renderTask.promise; } catch { /* Superseded canvas work. */ } }
-      if (destroyed || id !== requestID || !current(s)) return;
-      renderTask = null;
-      prev.disabled = number === 1; next.disabled = number === doc.numPages;
+    const first = await doc.getPage(1);
+    if (!current(s)) return;
+    const initial = first.getViewport({ scale: 1 });
+    for (let i = 1; i <= doc.numPages; i++) {
+      const slot = el('div', 'pdf-page');
+      slot.setAttribute('aria-label', `${i} / ${doc.numPages} 페이지`);
+      stage.append(slot);
+      pages.push({ number: i, slot, width: initial.width, height: initial.height, canvas: null, page: null });
+    }
+    function release(p) {
+      if (p.canvas) { p.canvas.width = 0; p.canvas.height = 0; p.canvas.remove(); p.canvas = null; }
+      p.slot.replaceChildren(); p.page?.cleanup(); p.page = null;
+    }
+    function dimensions(p) {
+      const scale = Math.max(.1, (stage.clientWidth - 32) / p.width) * zoom;
+      p.slot.style.width = p.width * scale + 'px'; p.slot.style.height = p.height * scale + 'px';
+      return scale;
+    }
+    function layout() {
       body.setAttribute('aria-busy', 'true');
+      requestID++; renderTask?.cancel();
+      for (const p of pages) { if (!running) release(p); dimensions(p); }
+      schedule();
+    }
+    function schedule() { pending = true; if (!running) void renderVisible(); }
+    async function renderVisible() {
+      running = true; pending = false;
+      const id = requestID;
       try {
-        const pageNumber = number;
-        const nextPage = await doc.getPage(pageNumber);
-        if (!current(s) || destroyed || id !== requestID) return;
-        if (page && page !== nextPage) page.cleanup();
-        page = nextPage;
-        const initial = page.getViewport({ scale: 1 });
-        const scale = Math.max(.1, (stage.clientWidth - 32) / initial.width) * zoom;
-        const viewport = page.getViewport({ scale });
-        // Bound the backing store even for a huge/hostile page on a high-DPI phone.
-        const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(8 * 1024 * 1024 / (viewport.width * viewport.height)));
-        canvas.width = Math.max(1, Math.floor(viewport.width * dpr)); canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
-        canvas.style.width = viewport.width + 'px'; canvas.style.height = viewport.height + 'px';
-        canvas.setAttribute('aria-label', `${s.entry.name}, ${number} / ${doc.numPages} 페이지`);
-        renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
-        await renderTask.promise;
-        if (!current(s) || id !== requestID) return;
-        body.setAttribute('aria-busy', 'false'); $('preview-hint').textContent = `${number} / ${doc.numPages} 페이지 · PDF.js`;
-        const content = await page.getTextContent();
-        if (current(s) && id === requestID) {
-          let words = [], count = 0;
-          for (const item of content.items) {
-            const word = String(item.str || '').slice(0, MAX_TEXT - count);
-            words.push(word); count += word.length + 1;
-            if (count >= MAX_TEXT) break;
-          }
-          accessible.textContent = words.join(' ');
+        const bounds = stage.getBoundingClientRect();
+        const nearby = pages.filter(p => {
+          const box = p.slot.getBoundingClientRect();
+          return box.bottom > bounds.top - 100 && box.top < bounds.bottom + 100;
+        });
+        for (const p of pages) if (!nearby.includes(p) || p.version !== id) release(p);
+        for (const p of nearby) {
+          if (destroyed || !current(s) || id !== requestID) break;
+          if (p.canvas) continue;
+          const page = await doc.getPage(p.number);
+          if (destroyed || !current(s) || id !== requestID) break;
+          p.page = page;
+          const original = page.getViewport({ scale: 1 }); p.width = original.width; p.height = original.height;
+          const viewport = page.getViewport({ scale: dimensions(p) });
+          // Stay below iOS canvas limits, including very tall/wide PDF pages.
+          const dpr = Math.min(window.devicePixelRatio || 1, 2, 4096 / viewport.width, 4096 / viewport.height, Math.sqrt(4 * 1024 * 1024 / (viewport.width * viewport.height)));
+          const canvas = el('canvas', 'pdf-canvas'); p.canvas = canvas; p.version = id;
+          canvas.width = Math.max(1, Math.floor(viewport.width * dpr)); canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+          canvas.style.width = viewport.width + 'px'; canvas.style.height = viewport.height + 'px';
+          canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `${s.entry.name}, ${p.number} / ${doc.numPages} 페이지`);
+          p.slot.append(canvas);
+          renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport, transform: [dpr, 0, 0, dpr, 0, 0] });
+          await renderTask.promise; renderTask = null;
+          if (!current(s) || id !== requestID) break;
+          body.setAttribute('aria-busy', 'false');
+          const content = await page.getTextContent();
+          if (!current(s) || id !== requestID) break;
+          const accessible = el('div', 'sr-only'); accessible.setAttribute('role', 'document');
+          accessible.textContent = content.items.map(item => String(item.str || '')).join(' ').slice(0, MAX_TEXT);
+          p.slot.append(accessible);
         }
       } catch (e) {
         if (current(s) && id === requestID && e.name !== 'RenderingCancelledException') error(s, '이 PDF 페이지를 표시할 수 없습니다.');
+      } finally {
+        renderTask = null; running = false;
+        if (!destroyed && current(s) && (pending || id !== requestID)) schedule();
       }
     }
-    const observer = new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(render, 120); }); observer.observe(stage);
-    s.cleanups.push(() => { observer.disconnect(); canvas.width = 0; canvas.height = 0; });
-    render();
+    stage.addEventListener('scroll', schedule, { passive: true });
+    let width = stage.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (stage.clientWidth === width) return;
+      width = stage.clientWidth; clearTimeout(timer); timer = setTimeout(layout, 120);
+    }); observer.observe(stage);
+    s.cleanups.push(() => { observer.disconnect(); for (const p of pages) release(p); });
+    layout();
   }
   $('preview-close').addEventListener('click', close);
   $('preview-previous').addEventListener('click', () => move(-1));

@@ -31,6 +31,12 @@ type Config struct {
 	PresignEndpoint                 *url.URL
 	ZipMaxFiles, ZipConcurrency     int
 	ZipMaxBytes                     int64
+
+	// HTML capabilities are opt-in and shared by previews and new tabs.
+	HTMLPreviewEnabled           bool
+	HTMLPreviewScripts           bool
+	HTMLPreviewExternalResources bool
+
 	// ZipDisabled turns off multi-file ZIP downloads (BROWSER_ZIP_ENABLED=false).
 	// The zero value keeps ZIP enabled, matching the default.
 	ZipDisabled bool
@@ -145,6 +151,15 @@ func Read() (Config, error) {
 	c.ProxyHealthPath = Env("HEALTH_PATH", "/healthz")
 	var err error
 	if c.Public, err = envBool("BROWSER_PUBLIC", false); err != nil {
+		return c, err
+	}
+	if c.HTMLPreviewEnabled, err = envBool("BROWSER_HTML_PREVIEW_ENABLED", false); err != nil {
+		return c, err
+	}
+	if c.HTMLPreviewScripts, err = envBool("BROWSER_HTML_PREVIEW_SCRIPTS", false); err != nil {
+		return c, err
+	}
+	if c.HTMLPreviewExternalResources, err = envBool("BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES", false); err != nil {
 		return c, err
 	}
 	if c.PathStyle, err = envBool("S3_FORCE_PATH_STYLE", true); err != nil {

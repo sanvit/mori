@@ -15,13 +15,13 @@
 | 이미지 | JPEG, PNG, GIF, WebP, AVIF, BMP, ICO | 브라우저 이미지 디코더, 맞춤/확대/축소 |
 | 영상 | MP4, M4V, WebM, OGV, MOV | Media Chrome 컨트롤 + native video |
 | 소리 | MP3, M4A, AAC, WAV, OGG/OGA, Opus, FLAC | Media Chrome 컨트롤 + native audio |
-| PDF | PDF | PDF.js, 페이지 이동, 확대/폭 맞춤, 암호 입력 |
+| PDF | PDF | PDF.js, 연속 스크롤, 확대/폭 맞춤, 암호 입력 |
 | 텍스트 | TXT, Markdown, JSON, CSV, YAML, 코드, 로그, HTML, SVG 등 | UTF-8 원문, 줄바꿈 전환, 처음 1 MiB |
 | 그 외 | ZIP, Office, HEIC, TIFF, MKV 등 | 원본 다운로드 |
 
 확장자는 뷰어 선택용이지 재생 보증이 아닙니다. 같은 MP4/MOV라도 코덱·프로파일·OS·브라우저에 따라 재생되지 않을 수 있습니다. 서버 변환/transcoding, HEIC/TIFF 변환, Office 뷰어, HLS/DASH manifest 및 하위 세그먼트 서명은 구현하지 않았습니다. 실패하면 안내와 재시도/다운로드를 표시합니다.
 
-HTML·SVG·Markdown은 마크업으로 실행하지 않고 `textContent`로만 표시합니다. `.ts`는 TypeScript 소스로 처리합니다. PDF는 한 페이지씩 보는 미리보기이며 편집기·전자서명 검증기·양식 작성기는 아닙니다. PDF 스크립트/XFA를 실행하지 않습니다. 암호는 PDF.js에 로컬로 전달하고 서버/로그/스토리지에 저장하지 않습니다. 페이지에는 스크린리더용 텍스트를 제공하지만 일반 PDF 뷰어의 선택 가능한 텍스트 레이어나 검색/주석 UI는 넣지 않았습니다.
+기본 설정에서 HTML·SVG·Markdown은 마크업으로 실행하지 않고 `textContent`로만 표시합니다. `.ts`는 TypeScript 소스로 처리합니다. PDF는 연속 스크롤 미리보기이며 편집기·전자서명 검증기·양식 작성기는 아닙니다. PDF 스크립트/XFA를 실행하지 않습니다. 암호는 PDF.js에 로컬로 전달하고 서버/로그/스토리지에 저장하지 않습니다. 페이지에는 스크린리더용 텍스트를 제공하지만 일반 PDF 뷰어의 선택 가능한 텍스트 레이어나 검색/주석 UI는 넣지 않았습니다.
 
 ## 유지보수 중인 의존성
 
@@ -98,7 +98,7 @@ AWS CORS 설명: https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html
 
 미리보기용 서버 변환이나 원본 전체 Blob 복사는 추가하지 않았습니다. 그렇다고 모든 형식이 부분 다운로드되는 것은 아닙니다. 이미지는 일반 이미지처럼 원본을 받고 디코딩하므로 큰 이미지는 클라이언트 메모리/트래픽을 사용합니다. 미디어는 `preload=metadata`를 사용하지만 실제 범위·버퍼 크기는 브라우저가 결정합니다.
 
-PDF.js는 Range와 한 페이지 렌더링을 사용하며 자동 선행 읽기를 억제합니다. 원본이 Range를 무시하거나 형식 특성상 필요하면 PDF 전체를 받을 수 있습니다. Canvas backing store는 약 8 megapixel로 제한하고 닫을 때 해제하지만 PDF 엔진 전체의 메모리/실행 시간 상한을 보증하지 않습니다. 텍스트는 첫 1 MiB만 요청하고 Range가 무시되어도 읽기를 중단합니다. 거대한 파일이나 신뢰할 수 없는 PDF를 처리하는 운영 환경에서는 별도의 자원/동시 요청 제한이 필요합니다.
+PDF.js는 Range와 화면 주변 페이지 렌더링을 사용하며 자동 선행 읽기를 억제합니다. 원본이 Range를 무시하거나 형식 특성상 필요하면 PDF 전체를 받을 수 있습니다. Canvas backing store는 페이지당 최대 4 megapixel (한 변 최대 4096 픽셀)로 제한하고 닫을 때 해제하지만 PDF 엔진 전체의 메모리/실행 시간 상한을 보증하지 않습니다. 텍스트는 첫 1 MiB만 요청하고 Range가 무시되어도 읽기를 중단합니다. 거대한 파일이나 신뢰할 수 없는 PDF를 처리하는 운영 환경에서는 별도의 자원/동시 요청 제한이 필요합니다.
 
 ## 업데이트 절차
 
@@ -108,6 +108,27 @@ PDF.js는 Range와 한 페이지 렌더링을 사용하며 자동 선행 읽기�
 
 ## 검증 구분
 
-이번 환경에서 실제 외부 패키지 내려받기와 브라우저 HTTP 접속이 차단되었습니다. 따라서 **실제 Media Chrome 재생 및 PDF.js worker를 통한 렌더링 통합 검증은 완료하지 않았습니다.** 빌드 스크립트는 테스트용 tarball로, 화면 동작은 모의 응답/PDF API 대역으로 검사했습니다. 이 결과를 실제 플레이어·PDF 엔진 검사 통과로 간주하지 않습니다.
+2026-09-12: 공식 패키지를 수집하고 실제 PDF.js worker를 사용하는 연속 스크롤을
+Chromium/WebKit에서 proxy 및 presigned 모드로 검증했습니다. Chromium에서는 Media Chrome
+오디오도 확인했습니다. HTML은 두 브라우저에서 스크립트/외부 리소스 설정의 네 조합을
+앱 미리보기와 새 탭 모두 검사했습니다. 모바일 빈 목록 너비와 확대/닫기 처리는 DOM 검사로 확인했습니다.
+아이폰 실기기, WebKit 미디어 재생, 운영 저장소는 이번 검증 범위에 포함되지 않습니다.
 
-`tests/preview_e2e.py`는 assets를 준비한 환경에서 실제 라이브러리·로컬 HTTP·S3 모의 서버로 검사하기 위한 스크립트입니다. 이 스크립트 자체는 Python 문법 검사만 통과했으며 이 환경에서 종단 실행되지 않았습니다. 자세한 완료/미완료 범위는 `docs/VERIFICATION.md`를 참고하세요.
+`python3 tests/preview_e2e.py`는 Chromium,
+`MORI_TEST_BROWSER=webkit python3 tests/preview_e2e.py`는 WebKit 검사입니다.
+
+### HTML 렌더링 및 PDF 스크롤
+
+`BROWSER_HTML_PREVIEW_ENABLED=true`를 설정하고 서버를 재시작하면 `.html`/`.htm`을
+미리보기와 새 탭에서 HTML로 렌더링합니다. 기본값 `false`에서는 소스 텍스트로 표시합니다.
+HTML 렌더링은 sandbox로 격리되며 인라인 CSS와 data 이미지/폰트를 지원합니다.
+`BROWSER_HTML_PREVIEW_SCRIPTS=true`로 스크립트 실행을,
+`BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES=true`로 HTTP(S) 외부 리소스 로드를 허용할 수 있습니다.
+두 옵션의 기본값은 `false`이며 미리보기와 새 탭에 동일하게 적용됩니다.
+외부 스크립트는 두 옵션을 모두 켜야 합니다. sandbox 격리는 유지되며 폼 제출은 차단합니다.
+외부 리소스는 절대 URL을 사용해야 하며, 저장소 내 상대경로 리소스 연결은 지원하지 않습니다. HTML은 presigned 설정에서도
+보안 응답 헤더를 적용하기 위해 proxy로 전달합니다. 다운로드는 기존 첨부파일 동작을 유지합니다.
+HTML은 별도 문서로 로드하며 텍스트 미리보기의 1 MiB 제한을 적용하지 않습니다.
+
+PDF는 페이지를 세로로 연속 스크롤하며 화면 주변 페이지만 렌더링합니다.
+모바일에서도 새 탭 버튼을 표시하고, 모든 미리보기에서 하단 기술 정보를 생략합니다.

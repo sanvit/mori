@@ -18,7 +18,8 @@ import threading
 import time
 import urllib.request
 import wave
-from http.server import ThreadingHTTPServer
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from itertools import product
 from playwright.sync_api import sync_playwright, expect
 import http_e2e as fixture
 
@@ -48,13 +49,30 @@ def wav_data():
     return data.getvalue()
 
 
+class HTMLResources(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        if self.path == '/style.css':
+            self.send_header('Content-Type','text/css'); self.end_headers()
+            self.wfile.write(b'h1 { background-color: rgb(0, 0, 255); }')
+        else:
+            self.send_header('Content-Type','text/javascript'); self.end_headers()
+            self.wfile.write(b'document.body.dataset.external="yes";')
+    def log_message(self, *args): pass
+
+
 def main():
     subprocess.run(['python3','tools/vendor.py','--check'],cwd=fixture.ROOT,check=True)
+    resources=ThreadingHTTPServer(('127.0.0.1',0),HTMLResources)
+    threading.Thread(target=resources.serve_forever,daemon=True).start()
     fixture.DATA.update({
         'public/00-audio.wav':wav_data(),
         'public/02-preview.pdf':simple_pdf(),
+        'public/04-page.html':b'<h1 style="color: rgb(255, 0, 0)">Rendered HTML</h1><script>document.body.dataset.executed="yes"</script>',
         'public/03-image.png':base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOomLYKAANCAbkKDdeAAAAAAElFTkSuQmCC'),
     })
+    fixture.DATA['public/04-page.html'] += f'<link rel="stylesheet" href="http://127.0.0.1:{resources.server_port}/style.css"><script src="http://127.0.0.1:{resources.server_port}/script.js"></script>'.encode()
     with tempfile.TemporaryDirectory(prefix='mori-preview-e2e-') as tmp:
         binary=Path(tmp)/'mori'
         subprocess.run(['go','build','-o',str(binary),'./cmd/mori'],cwd=fixture.ROOT,check=True)
@@ -70,11 +88,12 @@ def main():
                 options={'headless':True,'args':['--no-sandbox']}
                 executable=os.getenv('CHROMIUM_PATH') or shutil.which('chromium')
                 if executable: options['executable_path']=executable
-                browser=pw.chromium.launch(**options)
-                for mode in ('proxy','presigned'):
+                engine=os.getenv('MORI_TEST_BROWSER', 'chromium')
+                browser=getattr(pw,engine).launch(**(options if engine=='chromium' else {'headless':True}))
+                for mode,scripts,external in product(('proxy','presigned'), (False,True), (False,True)):
                     port=fixture.free_port(); base=f'http://127.0.0.1:{port}'
                     env={k:v for k,v in os.environ.items() if not k.startswith(('BROWSER_','S3_'))}
-                    env.update(BROWSER_LISTEN_ADDR=f'127.0.0.1:{port}',BROWSER_USERNAME='tester',BROWSER_PASSWORD='test-browser-password',BROWSER_PUBLIC='false',BROWSER_PREVIEW_MODE=mode,BROWSER_DOWNLOAD_MODE='proxy',BROWSER_PROXY_URL='',S3_ENDPOINT=f'http://127.0.0.1:{origin.server_port}',S3_REGION='ap-northeast-2',S3_BUCKET='test-bucket',S3_PREFIX='public/',S3_FORCE_PATH_STYLE='true',S3_ACCESS_KEY_ID='TESTACCESS',S3_SECRET_ACCESS_KEY='test-secret-key')
+                    env.update(BROWSER_LISTEN_ADDR=f'127.0.0.1:{port}',BROWSER_USERNAME='tester',BROWSER_PASSWORD='test-browser-password',BROWSER_PUBLIC='false',BROWSER_PREVIEW_MODE=mode,BROWSER_HTML_PREVIEW_ENABLED='true',BROWSER_HTML_PREVIEW_SCRIPTS=str(scripts).lower(),BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES=str(external).lower(),BROWSER_DOWNLOAD_MODE='proxy',BROWSER_PROXY_URL='',S3_ENDPOINT=f'http://127.0.0.1:{origin.server_port}',S3_REGION='ap-northeast-2',S3_BUCKET='test-bucket',S3_PREFIX='public/',S3_FORCE_PATH_STYLE='true',S3_ACCESS_KEY_ID='TESTACCESS',S3_SECRET_ACCESS_KEY='test-secret-key')
                     process=subprocess.Popen([str(binary)],cwd=tmp,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
                     try:
                         for _ in range(100):
@@ -82,7 +101,7 @@ def main():
                                 urllib.request.urlopen(base+'/healthz',timeout=.2).close();break
                             except OSError: time.sleep(.05)
                         else: raise RuntimeError('mori did not start')
-                        context=browser.new_context(viewport={'width':390,'height':844},http_credentials={'username':'tester','password':'test-browser-password','origin':base})
+                        context=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,device_scale_factor=3,http_credentials={'username':'tester','password':'test-browser-password','origin':base})
                         page=context.new_page(); errors=[]; page.on('pageerror',lambda e:errors.append(str(e)))
                         page.goto(base)
                         expect(page.locator('.file-row')).not_to_have_count(0)
@@ -95,25 +114,43 @@ def main():
                             expect(page.locator('#preview')).to_be_visible()
                         def close():
                             page.locator('#preview-close').click(); expect(page.locator('#preview')).not_to_be_visible();page.wait_for_timeout(100)
-                        open_file('03-image.png'); expect(page.locator('#preview-hint')).to_have_text('1 × 1'); close()
-                        for name,tag in [('00-audio.wav','audio')]+([('01-video.webm','video')] if has_video else []):
+                        open_file('03-image.png'); expect(page.locator('#preview-body')).to_have_attribute('aria-busy','false'); close()
+                        for name,tag in ([('00-audio.wav','audio')]+([('01-video.webm','video')] if has_video else []) if engine=='chromium' else []):
                             open_file(name); expect(page.locator('.mori-player.enhanced')).to_be_visible(timeout=20000)
                             assert page.evaluate('!!customElements.get("media-controller")')
                             page.locator('.player-chrome media-play-button').click()
-                            page.wait_for_function(f'document.querySelector("{tag}").currentTime>0',timeout=15000)
+                            page.wait_for_function(f'() => document.querySelector("{tag}").currentTime>0',timeout=15000)
                             page.evaluate(f'window.lastMedia=document.querySelector("{tag}")')
                             close(); assert page.evaluate('lastMedia.paused && !lastMedia.getAttribute("src")')
                         open_file('02-preview.pdf')
-                        expect(page.locator('#preview-hint')).to_contain_text('1 / 2 페이지',timeout=30000)
-                        page.locator('.pdf-tools [aria-label="다음 페이지"]').click()
-                        expect(page.locator('#preview-hint')).to_contain_text('2 / 2 페이지')
-                        assert page.locator('.pdf-stage [role=document]').inner_text().strip()
+                        expect(page.locator('.pdf-page')).to_have_count(2,timeout=30000)
+                        expect(page.locator('.pdf-page').first.locator('[role=document]')).to_contain_text('mori')
+                        page.locator('.pdf-stage').evaluate('(s)=>s.scrollTop=s.scrollHeight')
+                        expect(page.locator('.pdf-page').nth(1).locator('[role=document]')).to_contain_text('mori')
                         close()
+                        open_file('04-page.html')
+                        expect(page.frame_locator('.html-preview').locator('h1')).to_have_text('Rendered HTML')
+                        expect(page.frame_locator('.html-preview').locator('h1')).to_have_css('color','rgb(255, 0, 0)')
+                        expect(page.frame_locator('.html-preview').locator('body')).to_have_attribute('data-executed','yes') if scripts else expect(page.frame_locator('.html-preview').locator('body')).not_to_have_attribute('data-executed','yes')
+                        expect(page.frame_locator('.html-preview').locator('h1')).to_have_css('background-color','rgb(0, 0, 255)' if external else 'rgba(0, 0, 0, 0)')
+                        if scripts and external: expect(page.frame_locator('.html-preview').locator('body')).to_have_attribute('data-external','yes')
+                        else: expect(page.frame_locator('.html-preview').locator('body')).not_to_have_attribute('data-external','yes')
+                        with context.expect_page() as opened:
+                            page.locator('#preview-original').click()
+                        original=opened.value
+                        expect(original.locator('h1')).to_have_text('Rendered HTML')
+                        expect(original.locator('h1')).to_have_css('color','rgb(255, 0, 0)')
+                        if scripts: expect(original.locator('body')).to_have_attribute('data-executed','yes')
+                        else: expect(original.locator('body')).not_to_have_attribute('data-executed','yes')
+                        expect(original.locator('h1')).to_have_css('background-color','rgb(0, 0, 255)' if external else 'rgba(0, 0, 0, 0)')
+                        if scripts and external: expect(original.locator('body')).to_have_attribute('data-external','yes')
+                        else: expect(original.locator('body')).not_to_have_attribute('data-external','yes')
+                        original.close(); close()
                         open_file('README.md'); expect(page.locator('.preview-code')).to_contain_text('# mori');close()
                         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
                         assert not errors,errors
                         context.close()
-                        print(f'PASS actual browser libraries: {mode=}, image, Media Chrome/audio, PDF.js worker/paging, text, CORS/signature, lifecycle. WebM tested={has_video}.')
+                        print(f'PASS {engine}: {mode=}, PDF worker/scroll, image/text, HTML iframe/new tab {scripts=} {external=}; audio tested={engine=="chromium"}, WebM tested={has_video and engine=="chromium"}.')
                     finally:
                         process.terminate()
                         try: process.communicate(timeout=5)
@@ -121,6 +158,7 @@ def main():
                 browser.close()
         finally:
             origin.shutdown();origin.server_close()
+            resources.shutdown();resources.server_close()
     assert not fixture.ERRORS,fixture.ERRORS
 
 if __name__=='__main__': main()

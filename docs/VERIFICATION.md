@@ -71,3 +71,16 @@ docker compose up --build -d
 ## 화면 이미지
 
 제공한 화면 이미지는 모의 목록/이미지 fixture를 브라우저로 렌더링한 결과입니다. 실제 사용자 S3 버킷, 실제 Media Chrome 재생 또는 PDF.js 렌더링의 증거가 아닙니다. 런타임 데모 모드를 추가하지 않았습니다.
+
+
+## 2026-09-12 추가 검증
+
+- `go test ./...`: 통과.
+- `tests/preview_dom.py`: 모바일 빈 목록 열 너비, 새 탭 버튼, PDF 스크롤/확대/정리 통과.
+- `tests/preview_e2e.py`: Chromium 실제 PDF.js worker/연속 스크롤 및 Media Chrome 오디오 통과.
+- `MORI_TEST_BROWSER=webkit python3 tests/preview_e2e.py`: WebKit 실제 PDF.js worker/연속 스크롤 통과.
+- 두 브라우저 모두 proxy/presigned 및 HTML 스크립트/외부 리소스 네 조합을 검사.
+  앱 iframe/새 탭의 HTML 스타일, 인라인/외부 스크립트 허용·차단 확인.
+- 아이폰 실기기, 운영 저장소, WebKit 미디어, WebM 재생은 검증하지 않음.
+
+위 추가 검증은 이전 기록의 미검증 항목 중 명시한 범위만 갱신합니다.

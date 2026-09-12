@@ -6,7 +6,7 @@ h5ai처럼 경로와 파일 목록 위주로 사용하는 읽기 전용 파일 �
 
 파일 이름을 누르면 이미지·오디오·영상·PDF·텍스트 미리보기를 엽니다. 모바일에서는 크기/수정일을 파일명 아래에 표시하고, 전체 화면 미리보기와 하단 선택 다운로드 바를 제공합니다. Media Chrome 4.19.2 / PDF.js 6.3.289를 고정하고 **빌드 시 수집, 실행 시 같은 서버에서 제공**합니다. [미리보기 설정·형식·CORS·유지보수](docs/PREVIEW.md)를 참고하세요.
 
-이 소스 ZIP에는 외부 뷰어 배포 파일을 미리 넣지 않았습니다. Docker 빌드가 가져오므로 **빌드 환경에는 인터넷 접근이 필요**합니다. 이번 환경에서는 외부 패키지 다운로드/브라우저 HTTP가 차단되어 실제 Media Chrome·PDF.js 통합 실행은 미검증입니다. 완료한 검사와 제한은 [검증 기록](docs/VERIFICATION.md)에 구분했습니다.
+이 소스 ZIP에는 외부 뷰어 배포 파일을 미리 넣지 않았습니다. Docker 빌드가 가져오므로 **빌드 환경에는 인터넷 접근이 필요**합니다. Chromium에서 실제 Media Chrome 오디오 및 PDF.js, WebKit에서 PDF.js 렌더링을 검증했습니다. 아이폰 실기기와 운영 저장소는 별도 확인이 필요합니다. 완료한 검사와 제한은 [검증 기록](docs/VERIFICATION.md)에 구분했습니다.
 
 ### 기존 기능 유지
 
@@ -144,7 +144,7 @@ BROWSER_PREVIEW_MODE=proxy
 BROWSER_PRESIGN_TTL=15m
 ```
 
-두 모드의 기본값은 모두 `proxy`입니다. 두 값을 독립적으로 조합할 수 있으며 화면에는 별도의 설정 패널을 추가하지 않았습니다. 미리보기는 파일 이름 클릭으로 목록 위 대화상자에서 열고, 다운로드는 우측 아이콘을 사용합니다. 미리보기 안의 원본 열기/수정 키 클릭은 기존 새 탭 경로를 유지합니다. 지원 형식과 브라우저 코덱 제한은 `docs/PREVIEW.md`를 참고하세요. HTML/SVG/텍스트/JSON은 안전한 원문으로 표시하며, 알 수 없는 형식은 다운로드로 처리합니다.
+두 모드의 기본값은 모두 `proxy`입니다. 두 값을 독립적으로 조합할 수 있으며 화면에는 별도의 설정 패널을 추가하지 않았습니다. 미리보기는 파일 이름 클릭으로 목록 위 대화상자에서 열고, 다운로드는 우측 아이콘을 사용합니다. 미리보기 안의 원본 열기/수정 키 클릭은 기존 새 탭 경로를 유지합니다. 지원 형식과 브라우저 코덱 제한은 `docs/PREVIEW.md`를 참고하세요. 기본 설정에서 HTML/SVG/텍스트/JSON은 안전한 원문으로 표시하며, 알 수 없는 형식은 다운로드로 처리합니다.
 
 ### proxy
 
@@ -287,7 +287,7 @@ python3 tests/compose_smoke.py  # PyYAML 구조 검사; Docker 실행 검사가 
 tests/backends_e2e.sh           # Docker로 Apache WebDAV·vsftpd·OpenSSH를 띄워 실제 바이너리 검사
 python3 tests/http_e2e.py       # 실제 브라우저 HTTP 목록/ZIP/텍스트 검사
 make assets
-python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP, 환경상 이번 실행은 미완료
+python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP
 ```
 
 `tests/http_e2e.py`는 이번 환경의 브라우저 로컬 URL 정책으로 완료하지 못했습니다. 대신 UI 검사와 바이너리 HTTP 통합 검사를 분리해 실행했습니다. 새 재귀 ZIP은 하위 1,005개 파일의 2페이지 조회·완성 ZIP 검사를 포함합니다. 실제 AWS/MinIO/R2와 Docker 전체 기동, 대용량 ZIP64/부하 시험은 미검증입니다. 완료한 검사와 범위는 `docs/VERIFICATION.md`를 참고하세요. 테스트용 데이터는 테스트 코드에서만 생성하며 실행 바이너리에 샘플 파일을 넣지 않습니다.
@@ -308,3 +308,20 @@ python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP, 환경상 �
 - Go ZIP writer: https://go.dev/src/archive/zip/writer.go
 - Compose 파일 병합: https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/
 - 캐시 프록시 출처와 커밋: `NOTICE.md`
+
+
+### HTML 렌더링 및 PDF 스크롤
+
+`BROWSER_HTML_PREVIEW_ENABLED=true`를 설정하고 서버를 재시작하면 `.html`/`.htm`을
+미리보기와 새 탭에서 HTML로 렌더링합니다. 기본값 `false`에서는 소스 텍스트로 표시합니다.
+HTML 렌더링은 sandbox로 격리되며 인라인 CSS와 data 이미지/폰트를 지원합니다.
+`BROWSER_HTML_PREVIEW_SCRIPTS=true`로 스크립트 실행을,
+`BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES=true`로 HTTP(S) 외부 리소스 로드를 허용할 수 있습니다.
+두 옵션의 기본값은 `false`이며 미리보기와 새 탭에 동일하게 적용됩니다.
+외부 스크립트는 두 옵션을 모두 켜야 합니다. sandbox 격리는 유지되며 폼 제출은 차단합니다.
+외부 리소스는 절대 URL을 사용해야 하며, 저장소 내 상대경로 리소스 연결은 지원하지 않습니다. HTML은 presigned 설정에서도
+보안 응답 헤더를 적용하기 위해 proxy로 전달합니다. 다운로드는 기존 첨부파일 동작을 유지합니다.
+HTML은 별도 문서로 로드하며 텍스트 미리보기의 1 MiB 제한을 적용하지 않습니다.
+
+PDF는 페이지를 세로로 연속 스크롤하며 화면 주변 페이지만 렌더링합니다.
+모바일에서도 새 탭 버튼을 표시하고, 모든 미리보기에서 하단 기술 정보를 생략합니다.

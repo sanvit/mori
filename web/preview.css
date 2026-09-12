@@ -14,8 +14,7 @@
 .preview-action:disabled, .preview-tool:disabled { opacity: .3; }
 .close-action { margin-left: 6px; background: #f3f5f7; }
 .preview-body { display: flex; position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.preview-footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; margin: 0; padding: 4px 16px 4px 26px; border-top: 1px solid #e6ebef; background: #fff; font-size: 11px; color: #71818d; }
-#preview-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-footer { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 56px; margin: 0; padding: 4px 16px 4px 26px; border-top: 1px solid #e6ebef; background: #fff; font-size: 11px; color: #71818d; }
 #preview-counter { min-width: 46px; text-align: center; color: #82909a; font-variant-numeric: tabular-nums; }
 .preview-message { margin: auto; padding: 28px; text-align: center; max-width: 460px; }
 .preview-message .message-icon { width: 45px; height: 45px; color: #9daebc; margin-bottom: 16px; }
@@ -65,11 +64,9 @@
 .audio-player { max-width: 650px; background: #fff; color: #526f83; border: 1px solid #e1e8ed; border-radius: 12px; box-shadow: 0 4px 20px #304c6610; --media-primary-color: #526f83; --media-control-hover-background: #eaf2f7; --media-range-track-background: #dfe8ee; --media-range-bar-color: #6698b8; }
 .audio-player .player-chrome { background: none; padding: 12px 12px 6px; }
 .audio-player audio { width: 100%; }
-/* PDF.js renders one page at a time with a bounded canvas backing store. */
+/* Continuous pages with bounded canvases rendered near the viewport. */
 .pdf-preview { display: flex; flex-direction: column; width: 100%; min-height: 0; }
 .pdf-tools { display: flex; align-items: center; justify-content: center; padding: 4px 16px; background: #fff; border-bottom: 1px solid #e6ebef; flex: none; gap: 4px; }
-.page-input { width: 48px; height: 34px; text-align: center; font-size: 13px; color: #476276; border: 1px solid #dce4ea; border-radius: 5px; appearance: textfield; }
-.page-input::-webkit-inner-spin-button { appearance: none; }
 .page-total { min-width: 28px; margin-right: 4px; font-size: 12px; color: #82919c; }
 .pdf-tool-space { width: 22px; }
 .pdf-stage { flex: 1; min-height: 0; padding: 16px; overflow: auto; overscroll-behavior: contain; }
@@ -91,7 +88,6 @@
   .preview-heading p { font-size: 10px; }
   .preview-actions { gap: 0; }
   .preview-footer { padding: 4px max(8px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); font-size: 10px; }
-  .original-action { display: none; }
   .close-action { margin-left: 2px; }
   .image-stage { padding: 12px; }
   .image-tools { margin-bottom: 12px; }
@@ -108,7 +104,6 @@
   .audio-player .player-chrome { padding: 10px 6px 4px; }
   .pdf-tools { padding: 2px 6px; gap: 0; }
   .pdf-tool-space { width: 8px; }
-  .page-input { font-size: 16px; width: 43px; }
   .pdf-stage { padding: 12px; }
   .text-tools { padding: 4px 10px 4px 16px; }
   .preview-code { padding: 16px; font-size: 12px; }
@@ -123,3 +118,7 @@
   .audio-name { margin-bottom: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+.pdf-page { position: relative; flex: none; margin: 0 auto 16px; background: #fff; box-shadow: 0 2px 14px #243c5420; }
+.pdf-canvas { box-shadow: none; margin: 0; }
+.html-preview { width: 100%; height: 100%; border: 0; background: white; }
