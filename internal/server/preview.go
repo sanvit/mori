@@ -89,6 +89,11 @@ func (a *App) renderHTML(key string, download bool) bool {
 func (a *App) objectPresentation(w http.ResponseWriter, key string, download bool) {
 	contentType, disposition := media.Presentation(key, download)
 	policy := "default-src 'none'; sandbox"
+	// WebKit's native PDF viewer can fail under CSP sandbox. Presentation
+	// explicitly allows application/pdf; HTML/SVG/text remain sandboxed.
+	if !download && contentType == "application/pdf" {
+		policy = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	}
 	if a.renderHTML(key, download) {
 		contentType = "text/html; charset=utf-8"
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")

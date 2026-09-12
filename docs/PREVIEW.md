@@ -132,3 +132,17 @@ HTML은 별도 문서로 로드하며 텍스트 미리보기의 1 MiB 제한을 
 
 PDF는 페이지를 세로로 연속 스크롤하며 화면 주변 페이지만 렌더링합니다.
 모바일에서도 새 탭 버튼을 표시하고, 모든 미리보기에서 하단 기술 정보를 생략합니다.
+
+
+### iOS 18 PDF 호환성
+
+PDF.js 6.3.289의 `getTextContent()`는 iOS 18에 없는 `ReadableStream` 비동기
+이터레이터를 사용합니다. 앱은 `streamTextContent().getReader()`로 텍스트를 읽어
+이 의존성을 피하고, 텍스트 추출 실패가 이미 그린 페이지를 오류 화면으로 덮지 않도록 처리합니다.
+[PDF.js Safari 오류 보고](https://github.com/mozilla/pdf.js/issues/20973).
+
+새 탭 PDF는 `Content-Type: application/pdf`와 `Content-Disposition: inline`으로,
+다운로드는 `attachment`로 전달합니다. S3 presigned URL에도 같은 응답 값을 서명합니다.
+일부 WebKit의 기본 PDF 뷰어와 충돌하는 CSP `sandbox`는 인라인 PDF 응답에만 생략하며,
+HTML/SVG/텍스트의 격리는 유지합니다.
+[WebKit 수정 기록](https://webkit.org/blog/16445/release-notes-for-safari-technology-preview-212/).

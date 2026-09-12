@@ -34,7 +34,7 @@
 .image-tools { display: flex; align-items: center; gap: 4px; margin: 0 auto 16px; padding: 0 4px; border: 1px solid #e1e7ec; border-radius: 9px; background: #fff; box-shadow: 0 2px 8px #243b5010; }
 .zoom-label { min-width: 83px; text-align: center; font-size: 11px; color: #6a7a86; font-variant-numeric: tabular-nums; }
 /* Media Chrome handles native media state, keyboard control and accessibility. */
-.video-preview { display: flex; align-items: center; justify-content: center; width: 100%; background: #111820; padding: 30px; }
+.video-preview { display: flex; align-items: center; justify-content: center; width: 100%; padding: 0; }
 .mori-player { display: block; position: relative; width: 100%; color: #fff; background: #080b10; border-radius: 9px; overflow: hidden;
   --media-primary-color: #fff; --media-secondary-color: transparent; --media-control-background: transparent;
   --media-control-hover-background: #ffffff1f; --media-control-padding: 12px; --media-icon-size: 20px;
@@ -59,8 +59,7 @@
 .audio-preview { width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; background: #f8fafb; }
 .audio-art { display: flex; align-items: center; justify-content: center; width: 152px; height: 152px; border-radius: 30px; margin-bottom: 25px; color: #7597ad; background: radial-gradient(ellipse at 25% 10%, #f4fafb, #dce8ed 90%); box-shadow: inset 0 0 0 1px #c6d7e06b, 0 12px 26px #405c7010; }
 .audio-art svg { width: 56px; height: 56px; stroke-width: 1.1; }
-.audio-name { font-size: 17px; font-weight: 550; text-align: center; overflow-wrap: anywhere; max-width: 100%; }
-.audio-caption { font-size: 12px; margin: 10px 0 30px; color: #7c8b96; }
+.audio-name { margin-bottom: 30px; font-size: 17px; font-weight: 550; text-align: center; overflow-wrap: anywhere; max-width: 100%; }
 .audio-player { max-width: 650px; background: #fff; color: #526f83; border: 1px solid #e1e8ed; border-radius: 12px; box-shadow: 0 4px 20px #304c6610; --media-primary-color: #526f83; --media-control-hover-background: #eaf2f7; --media-range-track-background: #dfe8ee; --media-range-bar-color: #6698b8; }
 .audio-player .player-chrome { background: none; padding: 12px 12px 6px; }
 .audio-player audio { width: 100%; }
@@ -114,7 +113,7 @@
   .preview-heading p { display: none; }
   .video-preview { padding: 0; }
   .mori-player video { max-height: calc(100dvh - 100px); }
-  .audio-art, .audio-caption { display: none; }
+  .audio-art { display: none; }
   .audio-name { margin-bottom: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

@@ -160,7 +160,7 @@
     const wrap = el('div', audio ? 'audio-preview' : 'video-preview');
     if (audio) {
       const art = el('div', 'audio-art'); art.append(svg('music'));
-      wrap.append(art, el('div', 'audio-name', s.entry.name), el('p', 'audio-caption', '오디오 미리보기'));
+      wrap.append(art, el('div', 'audio-name', s.entry.name));
     }
     const controller = el('media-controller', audio ? 'mori-player audio-player' : 'mori-player');
     controller.setAttribute('defaultstreamtype', 'on-demand'); controller.setAttribute('autohide', '3');
@@ -233,6 +233,30 @@
     const tools = el('div', 'text-tools'); const count = el('span', '', limited ? '처음 1 MiB만 표시합니다.' : 'UTF-8 · 읽기 전용');
     const toggle = button('줄바꿈 켜기', () => { const on = pre.classList.toggle('wrap'); toggle.textContent = on ? '줄바꿈 끄기' : '줄바꿈 켜기'; toggle.setAttribute('aria-pressed', String(on)); }, null, 'text-toggle'); toggle.setAttribute('aria-pressed', 'false');
     tools.append(count, toggle); wrap.append(tools, pre); body.replaceChildren(wrap); body.setAttribute('aria-busy', 'false');
+  }
+  async function pdfText(s, page) {
+    // PDF.js getTextContent() uses ReadableStream's async iterator, which
+    // Safari/iOS 18 lacks. getReader() keeps accessibility text working there.
+    const reader = page.streamTextContent().getReader();
+    const cancel = () => { void reader.cancel().catch(() => {}); };
+    s.abort.signal.addEventListener('abort', cancel, { once: true });
+    const words = []; let length = 0, done = false;
+    try {
+      while (current(s) && length < MAX_TEXT) {
+        const chunk = await reader.read();
+        if (chunk.done) { done = true; break; }
+        for (const item of chunk.value.items) {
+          const word = String(item.str || '').slice(0, MAX_TEXT - length);
+          words.push(word); length += word.length + 1;
+          if (length >= MAX_TEXT) break;
+        }
+      }
+      return words.join(' ');
+    } finally {
+      s.abort.signal.removeEventListener('abort', cancel);
+      if (!done) await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
   }
   async function pdf(s) {
     pdfPromise ||= import(LIB.pdf).catch(e => { pdfPromise = null; throw e; });
@@ -329,11 +353,15 @@
           await renderTask.promise; renderTask = null;
           if (!current(s) || id !== requestID) break;
           body.setAttribute('aria-busy', 'false');
-          const content = await page.getTextContent();
-          if (!current(s) || id !== requestID) break;
-          const accessible = el('div', 'sr-only'); accessible.setAttribute('role', 'document');
-          accessible.textContent = content.items.map(item => String(item.str || '')).join(' ').slice(0, MAX_TEXT);
-          p.slot.append(accessible);
+          try {
+            const content = await pdfText(s, page);
+            if (!current(s) || id !== requestID) break;
+            const accessible = el('div', 'sr-only'); accessible.setAttribute('role', 'document');
+            accessible.textContent = content; p.slot.append(accessible);
+          } catch {
+            // Text extraction is supplementary. Never replace a successfully
+            // rendered PDF with a page-rendering error when only text fails.
+          }
         }
       } catch (e) {
         if (current(s) && id === requestID && e.name !== 'RenderingCancelledException') error(s, '이 PDF 페이지를 표시할 수 없습니다.');

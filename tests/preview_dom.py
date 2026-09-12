@@ -19,7 +19,8 @@ for css in ('styles.css','preview.css'):
     html=html.replace(f'<link rel="stylesheet" href="/{css}">','<style>'+(ROOT/'web'/css).read_text()+'</style>')
 html=html.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">','')
 fixtures=r'''() => {
-  window.calls=[]; window.textCancelled=0; window.pdfDestroyed=0; window.pdfCancelled=0; window.pdfOptions=[];
+  window.calls=[]; window.textCancelled=0; window.pdfDestroyed=0; window.pdfCancelled=0; window.pdfOptions=[]; window.pdfTextFailure=false; window.pdfTextLarge=false; window.pdfTextCancelled=0;
+  delete ReadableStream.prototype[Symbol.asyncIterator];
   const names=[['Archive/',0,true],['Photos/',0,true],['01-mountains.jpg',1536000],['02-film.mp4',35900000],['03-soundtrack.mp3',4567000],['04-guide.pdf',243000],['05-README.md',512],['06-large.log',6*1024*1024],['07-locked.pdf',1200],['08-package.zip',2300000]];
   window.entries=names.map(([name,size,folder])=>({key:name,name,folder:!!folder,size,modified:'2026-09-09T02:30:00Z',etag:'test'}));
   const canvas=document.createElement('canvas'); canvas.width=960; canvas.height=640;
@@ -63,7 +64,14 @@ fixtures=r'''() => {
       const task={promise:new Promise((resolve,reject)=>{resolveDoc=resolve;rejectDoc=reject;}),destroy(){pdfDestroyed++;rejectDoc(new Error('destroyed'));return Promise.resolve();}};
       const doc={numPages:3,async getPage(number){
         await new Promise(r=>setTimeout(r,5));
-        return {cleanup(){},getViewport({scale}){return {width:595*scale,height:842*scale};},getTextContent:async()=>({items:[{str:'Fixture page '+number}]}),render({canvasContext,viewport}){
+        return {cleanup(){},getViewport({scale}){return {width:595*scale,height:842*scale};},streamTextContent(){
+          let sent=false;
+          return new ReadableStream({pull(c){
+            if(window.pdfTextFailure){c.error(new TypeError('Text extraction failed'));return;}
+            if(sent){c.close();return;} sent=true;
+            c.enqueue({items:[{str:window.pdfTextLarge?'x'.repeat(2*1024*1024):'Fixture page '+number}]});
+          },cancel(){pdfTextCancelled++;}}, {highWaterMark:0});
+        },render({canvasContext,viewport}){
           let reject,timeout;
           const promise=new Promise((resolve,r)=>{reject=r;timeout=setTimeout(()=>{canvasContext.fillStyle='white';canvasContext.fillRect(0,0,viewport.width,viewport.height);resolve();},20);});
           return {promise,cancel(){pdfCancelled++;clearTimeout(timeout);reject(Object.assign(new Error('cancelled'),{name:'RenderingCancelledException'}));}};
@@ -175,6 +183,21 @@ with sync_playwright() as p:
     page.evaluate('window.lastCanvas=document.querySelector("canvas.pdf-canvas")')
     close()
     assert page.evaluate('pdfDestroyed===1 && lastCanvas.width===0 && lastCanvas.height===0')
+    page.evaluate('pdfTextFailure=true')
+    open_file('04-guide.pdf')
+    expect(page.locator('#preview-body')).to_have_attribute('aria-busy','false')
+    page.wait_for_timeout(100)
+    expect(page.locator('.pdf-page').first.locator('canvas')).to_be_visible()
+    expect(page.locator('.preview-message')).to_have_count(0)
+    page.locator('.pdf-stage').evaluate('(s)=>s.scrollTop=s.scrollHeight')
+    expect(page.locator('.pdf-page').last.locator('canvas')).to_be_visible()
+    close()
+    page.evaluate('pdfTextFailure=false; pdfTextLarge=true')
+    open_file('04-guide.pdf')
+    expect(page.locator('.pdf-page').first.locator('[role=document]')).to_have_text('x'*1048576)
+    assert page.evaluate('pdfTextCancelled>0')
+    close()
+    page.evaluate('pdfTextLarge=false')
     open_file('07-locked.pdf')
     expect(page.locator('.pdf-password')).to_be_visible()
     page.locator('.pdf-password input').fill('secret')

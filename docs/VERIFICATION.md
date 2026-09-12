@@ -84,3 +84,16 @@ docker compose up --build -d
 - 아이폰 실기기, 운영 저장소, WebKit 미디어, WebM 재생은 검증하지 않음.
 
 위 추가 검증은 이전 기록의 미검증 항목 중 명시한 범위만 갱신합니다.
+
+
+## iOS 18 PDF 후속 수정 검증
+
+WebKit 18.4 (Playwright 1.51.0)에서 기존 구현의 PDF 표시 후 실패를 재현했습니다.
+`getTextContent()`의 스트림 비동기 이터레이터 의존성을 `streamTextContent().getReader()`로
+대체한 뒤 동일한 실제 PDF.js 테스트의 proxy/presigned 및 HTML 설정 조합이 통과했습니다.
+아이폰 iOS 18.7.2 실기기 실행을 의미하지는 않습니다.
+
+DOM 회귀 검사는 스트림 비동기 이터레이터가 없는 환경, 텍스트 추출 실패 후 페이지 유지,
+추출 텍스트 크기 제한 및 스트림 취소를 검사합니다.
+`go test ./internal/server ./internal/media ./internal/s3`는 PDF GET/HEAD/Range 및
+한글 파일명, proxy/presigned의 inline/attachment 응답 검사를 포함해 통과했습니다.
