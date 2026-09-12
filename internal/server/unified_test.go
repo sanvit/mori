@@ -202,3 +202,36 @@ func TestFilePathDownloadFlagAndFallbackPresentation(t *testing.T) {
 		t.Fatal("error page is not sandboxed", csp)
 	}
 }
+
+// The file path and the object API are two ways to read the same object, so a
+// change to one must not quietly give the other different headers. X-Cache is
+// the only expected difference: the second read is served from the cache.
+func TestFilePathAndObjectAPIAgreeOnHeaders(t *testing.T) {
+	for _, tc := range []struct{ name, file, api string }{
+		{"inline", "/docs/a.txt", "/_mori/api/object?key=docs/a.txt"},
+		{"download", "/docs/a.txt?download=1", "/_mori/api/object?key=docs/a.txt&download=1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, _, _ := unifiedFixture(t, "browser", true)
+			file, api := call(a, "GET", tc.file, nil), call(a, "GET", tc.api, nil)
+			if file.Code != 200 || api.Code != 200 || file.Body.String() != api.Body.String() {
+				t.Fatal(file.Code, api.Code)
+			}
+			names := map[string]bool{}
+			for k := range file.Header() {
+				names[k] = true
+			}
+			for k := range api.Header() {
+				names[k] = true
+			}
+			for k := range names {
+				if k == "X-Cache" {
+					continue
+				}
+				if got, want := file.Header().Get(k), api.Header().Get(k); got != want {
+					t.Errorf("%s: file path %q, object API %q", k, got, want)
+				}
+			}
+		})
+	}
+}

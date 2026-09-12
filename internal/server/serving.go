@@ -155,16 +155,19 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 	// only when headers reach the public connection.
 	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(status int, h http.Header) {
 		if a.cfg.ServeMode == "browser" {
+			// Stored files carry the same guarantees on either route. An HTML
+			// preview relaxes framing for itself inside objectPresentation.
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 			if status < 400 {
 				a.objectPresentation(w, strings.TrimPrefix(r.URL.Path, "/"), download)
 			} else {
 				// The body is an index, SPA or error page, not the requested
 				// object. Presenting it as that object would label HTML with the
 				// missing file's type and name. Keep the served page's own type
-				// and still deny it scripts and embedding.
+				// and still deny it scripts.
 				w.Header().Del("Content-Disposition")
 				w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-				w.Header().Set("X-Frame-Options", "DENY")
 			}
 			w.Header().Set("Cache-Control", "private, no-store")
 		} else if a.cfg.Username != "" {
