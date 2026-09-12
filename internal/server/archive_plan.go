@@ -6,8 +6,8 @@ import (
 	"path"
 	"strings"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
+	"mori/internal/backend"
+	"mori/internal/config"
 )
 
 type archiveError struct {

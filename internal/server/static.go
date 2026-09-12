@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/web"
+	"mori/web"
 )
 
 func (a *App) static(w http.ResponseWriter, r *http.Request) {

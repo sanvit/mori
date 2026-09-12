@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
-	"mori-s3/internal/media"
+	"mori/internal/backend"
+	"mori/internal/config"
+	"mori/internal/media"
 )
 
 const propfindBody = `<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:getcontentlength/><D:getlastmodified/><D:getetag/></D:prop></D:propfind>`

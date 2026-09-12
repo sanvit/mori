@@ -3,6 +3,8 @@
 !.env.example
 .git
 bin/
+/dist/
+/release-bin/
 /mori
 __pycache__/
 *.pyc

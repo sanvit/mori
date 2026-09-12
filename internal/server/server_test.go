@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
+	"mori/internal/backend"
+	"mori/internal/config"
 )
 
 func testConfig() config.Config {

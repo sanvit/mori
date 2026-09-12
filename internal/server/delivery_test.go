@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/s3"
+	"mori/internal/s3"
 )
 
 func TestDeliveryModesIndependentAndNoClientOverride(t *testing.T) {

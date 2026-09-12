@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/backend"
+	"mori/internal/backend"
 )
 
 // memBackend is a non-S3 backend model: no ETags of its own, no ranges, no

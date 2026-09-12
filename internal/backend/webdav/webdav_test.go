@@ -14,8 +14,8 @@ import (
 
 	xwebdav "golang.org/x/net/webdav"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
+	"mori/internal/backend"
+	"mori/internal/config"
 )
 
 func fixture(t *testing.T) (*Client, *httptest.Server) {

@@ -16,9 +16,12 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
-  binaries:
-    name: Build Go binaries
+  publish:
+    name: Build binaries and container image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -38,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p release-bin dist
 
           targets=(
             linux/amd64
@@ -60,14 +63,13 @@ jobs:
             fi
 
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath -ldflags='-s -w' -o "dist/$binary" ./cmd/mori
+              go build -trimpath -ldflags='-s -w' -o "release-bin/$binary" ./cmd/mori
 
             if [[ "$goos" == "windows" ]]; then
-              (cd dist && zip -q "${archive}.zip" "$binary")
+              (cd release-bin && zip -q "../dist/${archive}.zip" "$binary")
             else
-              (cd dist && tar -czf "${archive}.tar.gz" "$binary")
+              (cd release-bin && tar -czf "../dist/${archive}.tar.gz" "$binary")
             fi
-            rm "dist/$binary"
           done
 
           sha256sum dist/* | sed 's#dist/##' > dist/checksums.txt
@@ -79,19 +81,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 1
-
-  container:
-    name: Build and push container image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -116,6 +105,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: Dockerfile.release
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -125,9 +115,7 @@ jobs:
 
   release:
     name: Update continuous release
-    needs:
-      - binaries
-      - container
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -138,7 +126,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download release archives
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-binaries
           path: dist

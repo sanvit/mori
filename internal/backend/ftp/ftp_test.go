@@ -14,8 +14,8 @@ import (
 	ftpserver "github.com/fclairamb/ftpserverlib"
 	"github.com/spf13/afero"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
+	"mori/internal/backend"
+	"mori/internal/config"
 )
 
 type driver struct {

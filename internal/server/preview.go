@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/internal/config"
-	"mori-s3/internal/media"
+	"mori/internal/config"
+	"mori/internal/media"
 )
 
 // Resolve a GetObject source without performing HEAD or reading the file body.

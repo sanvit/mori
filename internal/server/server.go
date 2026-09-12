@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/cache"
-	"mori-s3/internal/config"
-	"mori-s3/internal/s3"
+	"mori/internal/backend"
+	"mori/internal/cache"
+	"mori/internal/config"
+	"mori/internal/s3"
 )
 
 type App struct {

@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/s3"
+	"mori/internal/backend"
+	"mori/internal/s3"
 )
 
 const archivePlanTTL = 2 * time.Minute

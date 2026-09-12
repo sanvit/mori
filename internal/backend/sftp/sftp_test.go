@@ -18,8 +18,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
+	"mori/internal/backend"
+	"mori/internal/config"
 )
 
 // startServer runs an in-process SSH server exposing the SFTP subsystem.

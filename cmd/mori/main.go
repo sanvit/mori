@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/backend/ftp"
-	"mori-s3/internal/backend/sftp"
-	"mori-s3/internal/backend/webdav"
-	"mori-s3/internal/config"
-	"mori-s3/internal/s3"
-	"mori-s3/internal/server"
-	"mori-s3/web"
+	"mori/internal/backend"
+	"mori/internal/backend/ftp"
+	"mori/internal/backend/sftp"
+	"mori/internal/backend/webdav"
+	"mori/internal/config"
+	"mori/internal/s3"
+	"mori/internal/server"
+	"mori/web"
 )
 
 const version = "0.5.0"

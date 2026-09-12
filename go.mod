@@ -1,4 +1,4 @@
-module mori-s3
+module mori
 
 go 1.26.0
 

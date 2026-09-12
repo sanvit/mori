@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/s3"
+	"mori/internal/s3"
 )
 
 func archiveFixture(t *testing.T, hook func(http.ResponseWriter, *http.Request) bool) (*App, *atomic.Int32, *atomic.Int32) {

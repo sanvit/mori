@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/config"
+	"mori/internal/config"
 )
 
 func testConfig() config.Config {

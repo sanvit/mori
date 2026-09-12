@@ -1,1 +1,1 @@
-ok  	mori-s3	1.735s	coverage: 86.6% of statements
+ok  	mori	1.735s	coverage: 86.6% of statements

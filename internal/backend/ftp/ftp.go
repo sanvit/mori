@@ -18,9 +18,9 @@ import (
 
 	ftpclient "github.com/jlaffaye/ftp"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
-	"mori-s3/internal/media"
+	"mori/internal/backend"
+	"mori/internal/config"
+	"mori/internal/media"
 )
 
 const poolSize = 4

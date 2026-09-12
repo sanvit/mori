@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/internal/backend"
+	"mori/internal/backend"
 )
 
 // Walk visits every descendant object of prefix. It is ONLY used for a

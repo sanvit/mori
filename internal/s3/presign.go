@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"mori-s3/internal/config"
-	"mori-s3/internal/media"
+	"mori/internal/config"
+	"mori/internal/media"
 )
 
 // Presign does not fetch the object and never exposes the secret access key.

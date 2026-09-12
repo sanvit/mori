@@ -20,9 +20,9 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/config"
-	"mori-s3/internal/media"
+	"mori/internal/backend"
+	"mori/internal/config"
+	"mori/internal/media"
 )
 
 const maxDirectories = 10000

@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"mori-s3/internal/backend"
-	"mori-s3/internal/s3"
+	"mori/internal/backend"
+	"mori/internal/s3"
 )
 
 type recursiveStats struct{ Lists, Heads, Gets atomic.Int32 }
