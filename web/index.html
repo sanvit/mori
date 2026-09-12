@@ -20,7 +20,6 @@
           <button id="clear-selection" class="clear-selection" type="button">선택 해제</button>
           <button id="download-zip" class="zip-button" type="button" hidden>ZIP 다운로드</button>
         </div>
-        <label class="mobile-sort"><span class="sr-only">목록 정렬</span><select id="mobile-sort" aria-label="목록 정렬"><option value="name:1">이름순</option><option value="name:-1">이름 역순</option><option value="modified:-1">최근 수정순</option><option value="size:1">작은 파일순</option><option value="size:-1">큰 파일순</option></select></label>
         <button id="refresh" class="icon-button" type="button" title="새로고침" aria-label="새로고침">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10a8.1 8.1 0 0 0-14-3L3 10m0-6v6h6M4 14a8.1 8.1 0 0 0 14 3l3-3m0 6v-6h-6"/></svg>
         </button>
@@ -34,7 +33,12 @@
         <thead>
           <tr>
             <th scope="col" class="select-cell"><label class="check-hit"><input id="select-all" type="checkbox" aria-label="불러온 파일과 폴더 모두 선택" title="불러온 항목을 선택합니다. 선택한 폴더는 하위 파일까지 ZIP에 포함합니다."></label></th>
-            <th scope="col" aria-sort="ascending"><button type="button" data-sort="name">이름<span class="sort-mark" aria-hidden="true">↑</span></button></th>
+            <th scope="col" aria-sort="ascending">
+              <div class="name-header">
+                <button type="button" data-sort="name">이름<span class="sort-mark" aria-hidden="true">↑</span></button>
+                <label class="mobile-sort"><span class="sr-only">목록 정렬</span><select id="mobile-sort" aria-label="목록 정렬"><option value="name:1">이름순</option><option value="name:-1">이름 역순</option><option value="modified:-1">최근 수정순</option><option value="size:1">작은 파일순</option><option value="size:-1">큰 파일순</option></select></label>
+              </div>
+            </th>
             <th scope="col" class="date-cell" aria-sort="none"><button type="button" data-sort="modified">수정일<span class="sort-mark" aria-hidden="true"></span></button></th>
             <th scope="col" class="size-cell" aria-sort="none"><button type="button" data-sort="size">크기<span class="sort-mark" aria-hidden="true"></span></button></th>
             <th scope="col"><span class="sr-only">다운로드</span></th>

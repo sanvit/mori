@@ -115,19 +115,28 @@ tr.selected { background: #f1f7fb; }
 .selection-tools { display: flex; align-items: center; gap: 10px; }
 .clear-selection { border: 0; background: transparent; color: #718695; font-size: 11px; padding: 9px; min-height: 44px; }
 .clear-selection:hover { color: #387cab; }
+.name-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.breadcrumb-trail { display: contents; }
 .mobile-sort { display: none; }
 .breadcrumbs { scroll-margin-top: 20px; }
 @media (pointer: coarse) { .icon-button { width: 44px; height: 44px; padding: 12px; } .check-hit { min-height: 52px; } }
 @media (max-width: 740px) {
   .index { width: calc(100% - 28px); margin: 0 auto 24px; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   .toolbar { position: sticky; top: 0; z-index: 5; min-height: 78px; gap: 4px 10px; margin: 0 -2px; padding: calc(12px + env(safe-area-inset-top)) 2px 10px; flex-wrap: nowrap; background: #fffffffa; }
-  .breadcrumbs { flex-wrap: nowrap; gap: 8px; font-size: 14px; overflow-x: auto; scrollbar-width: none; padding: 3px 0; }
-  .breadcrumbs::-webkit-scrollbar { display: none; }
-  .breadcrumbs a { flex: none; max-width: 170px; min-height: 44px; gap: 8px; }
+  .breadcrumbs { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 0; font-size: 14px; padding: 3px 0; }
+  .breadcrumb-trail { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .breadcrumb-trail::-webkit-scrollbar { display: none; }
+  .breadcrumbs.has-path .breadcrumb-trail { font-size: 12px; }
+  .breadcrumbs.has-path .root span { display: none; }
+  .breadcrumbs .current-separator { display: none; }
+  .breadcrumbs a { flex: none; max-width: none; min-height: 44px; gap: 8px; }
+  .breadcrumbs .current-folder { min-height: 28px; padding: 2px 0 4px; }
+  .breadcrumbs:not(.has-path) .root { min-width: 0; flex: 1; }
   .breadcrumbs a span { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .breadcrumbs .current-folder span { white-space: normal; overflow-wrap: anywhere; }
   .breadcrumbs .root-icon { width: 20px; height: 20px; }
   .tools { gap: 1px; }
-  .mobile-sort { display: block; }
+  .mobile-sort { display: block; flex: none; margin-left: auto; }
   .mobile-sort select { border: 0; background: transparent; color: #72828e; height: 44px; font-size: 16px; max-width: 110px; cursor: pointer; }
   .icon-button { width: 44px; height: 44px; padding: 12px; }
   .select-col { width: 44px; }

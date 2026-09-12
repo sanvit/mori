@@ -95,21 +95,29 @@
     const nav = $('breadcrumbs');
     nav.replaceChildren();
     const parts = state.prefix.split('/').filter(Boolean);
+    nav.classList.toggle('has-path', parts.length > 0);
+    const trail = element('span', 'breadcrumb-trail');
     const root = element('a', 'root');
+    root.setAttribute('aria-label', state.title);
+    root.title = state.title;
     root.href = folderURL('');
     root.append(icon('root', 'root-icon'), element('span', '', state.title));
     if (!parts.length) root.setAttribute('aria-current', 'page');
-    nav.append(root);
+    trail.append(root); nav.append(trail);
     let path = '';
     parts.forEach((name, i) => {
       path += name + '/';
-      nav.append(icon('chevron', 'separator'));
-      const link = element('a');
+      const current = i === parts.length - 1;
+      const target = current ? nav : trail;
+      target.append(icon('chevron', current ? 'separator current-separator' : 'separator'));
+      const link = element('a', current ? 'current-folder' : '');
+      link.title = name;
       link.href = folderURL(path);
       link.append(element('span', '', name));
       if (i === parts.length - 1) link.setAttribute('aria-current', 'page');
-      nav.append(link);
+      target.append(link);
     });
+    requestAnimationFrame(() => { if (mobileLayout.matches) trail.scrollLeft = trail.scrollWidth; });
     document.title = (state.prefix ? '/' + state.prefix + ' · ' : '') + state.title;
     $('heading').textContent = '/' + state.prefix + ' 파일 목록';
   }
