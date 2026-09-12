@@ -145,6 +145,7 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "Continuous build" \
               --notes "Automated build of main at \`$GITHUB_SHA\`." \
+              --draft=false \
               --prerelease
           else
             gh release create continuous dist/* \
