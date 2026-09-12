@@ -3,6 +3,12 @@
   const $ = (id) => document.getElementById(id);
   const state = { title: 'Files', prefix: '', entries: [], cursor: '', sort: 'name', direction: 1, loading: false, controller: null, error: '', selected: new Set(), zipPreparing: false, zipController: null, zipEnabled: true, zipMaxFiles: 200, zipMaxBytes: 20 * 1024 ** 3, downloadMode: 'proxy', previewMode: 'proxy', notice: '' };
   const compareNames = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' }).compare;
+  const mobileLayout = matchMedia('(max-width: 740px)');
+  const visibleColumns = () => (mobileLayout.matches ? 3 : 5) - (state.zipEnabled ? 0 : 1);
+  mobileLayout.addEventListener('change', () => {
+    const cell = document.querySelector('#files .message');
+    if (cell) cell.colSpan = visibleColumns();
+  });
   const NS = 'http://www.w3.org/2000/svg';
 
   // All names and server messages are rendered as text, never as HTML.
@@ -186,7 +192,7 @@
     if (!entries.length) {
       const row = element('tr', 'message-row');
       const message = state.loading ? '파일 목록을 불러오는 중…' : state.error ? '목록을 불러오지 못했습니다.' : state.cursor ? '다음 페이지에 항목이 더 있습니다.' : '이 폴더는 비어 있습니다.';
-      const cell = element('td', 'message', message); cell.colSpan = state.zipEnabled ? 5 : 4; row.append(cell); fragment.append(row);
+      const cell = element('td', 'message', message); cell.colSpan = visibleColumns(); row.append(cell); fragment.append(row);
     }
     $('files').replaceChildren(fragment);
     const folders = entries.filter(e => e.folder).length;

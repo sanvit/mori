@@ -26,13 +26,14 @@ func (a *App) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := media.PreviewKind(key)
-	result := map[string]any{"kind": kind, "mode": a.cfg.PreviewMode, "name": path.Base(key), "textLimit": 1 << 20}
+	renderHTML := a.renderHTML(key, false)
+	result := map[string]any{"renderHTML": renderHTML, "htmlScripts": renderHTML && a.cfg.HTMLPreviewScripts, "kind": kind, "mode": a.cfg.PreviewMode, "name": path.Base(key), "textLimit": 1 << 20}
 	if kind == "unsupported" {
 		jsonOut(w, result)
 		return
 	}
 	source := "/api/object?" + url.Values{"key": {key}}.Encode()
-	if a.cfg.PreviewMode == "presigned" && a.s3 != nil {
+	if a.cfg.PreviewMode == "presigned" && a.s3 != nil && !renderHTML {
 		now := time.Now()
 		var err error
 		source, err = a.s3.Presign(http.MethodGet, key, false, now)
@@ -42,8 +43,14 @@ func (a *App) preview(w http.ResponseWriter, r *http.Request) {
 		}
 		result["expiresAt"] = now.Add(a.cfg.PresignTTL).UTC().Format(time.RFC3339)
 	}
+	if renderHTML {
+		result["mode"] = "proxy"
+	}
 	result["url"] = source
 	result["contentType"], _ = media.Presentation(key, false)
+	if renderHTML {
+		result["contentType"] = "text/html; charset=utf-8"
+	}
 	jsonOut(w, result)
 }
 
@@ -65,8 +72,43 @@ func (a *App) contentSecurityPolicy() string {
 			remote = " " + endpoint.Scheme + "://" + host
 		}
 	}
+	frameSource := "'none'"
+	if a.cfg.HTMLPreviewEnabled {
+		frameSource = "'self'"
+	}
 	return "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data: blob:" + remote + "; media-src 'self' blob:" + remote + "; " +
 		"connect-src 'self'" + remote + "; font-src 'self' data: blob:; worker-src 'self' blob:; " +
-		"object-src 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+		"object-src 'none'; frame-src " + frameSource + "; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+}
+
+func (a *App) renderHTML(key string, download bool) bool {
+	return a.cfg.HTMLPreviewEnabled && !download && (strings.EqualFold(path.Ext(key), ".html") || strings.EqualFold(path.Ext(key), ".htm"))
+}
+
+func (a *App) objectPresentation(w http.ResponseWriter, key string, download bool) {
+	contentType, disposition := media.Presentation(key, download)
+	policy := "default-src 'none'; sandbox"
+	if a.renderHTML(key, download) {
+		contentType = "text/html; charset=utf-8"
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		resources, scripts, sandbox := "", "'none'", "sandbox"
+		if a.cfg.HTMLPreviewExternalResources {
+			resources = " https: http:"
+		}
+		if a.cfg.HTMLPreviewScripts {
+			scripts = "'unsafe-inline' 'unsafe-eval'" + resources
+			sandbox += " allow-scripts"
+		}
+		policy = "default-src 'none'; script-src " + scripts + "; style-src 'unsafe-inline'" + resources + "; img-src data: blob:" + resources + "; font-src data:" + resources + "; media-src data: blob:" + resources + "; connect-src "
+		if resources == "" {
+			policy += "'none'"
+		} else {
+			policy += strings.TrimSpace(resources)
+		}
+		policy += "; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; " + sandbox
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", disposition)
+	w.Header().Set("Content-Security-Policy", policy)
 }

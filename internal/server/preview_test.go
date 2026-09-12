@@ -134,3 +134,49 @@ func TestPreviewCSPAndAssetRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestHTMLRenderingOption(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<h1>Hello</h1>")) }))
+	defer origin.Close()
+	for _, enabled := range []bool{false, true} {
+		for _, mode := range []string{"proxy", "presigned"} {
+			c := testConfig()
+			c.Endpoint, _ = url.Parse(origin.URL)
+			c.HTMLPreviewEnabled = enabled
+			c.PreviewMode = mode
+			c.AccessKey, c.SecretKey = "test", "test"
+			a := New(c)
+			w := call(a, "GET", "/api/preview?key=page.HTML", nil)
+			var source map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &source); err != nil {
+				t.Fatal(err)
+			}
+			if source["renderHTML"] != enabled {
+				t.Fatal(source)
+			}
+			if enabled && source["mode"] != "proxy" {
+				t.Fatal(source)
+			}
+			for _, method := range []string{"GET", "HEAD"} {
+				w = call(a, method, "/api/object?key=page.HTML", nil)
+				if !enabled && mode == "presigned" && method == "GET" {
+					continue
+				}
+				want := "text/plain; charset=utf-8"
+				if enabled {
+					want = "text/html; charset=utf-8"
+				}
+				if w.Code != 200 || w.Header().Get("Content-Type") != want || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") {
+					t.Fatal(w.Code, w.Header())
+				}
+				if !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
+					t.Fatal(w.Header())
+				}
+			}
+			w = call(a, "GET", "/api/object?key=page.HTML&download=1", nil)
+			if !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment;") || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+				t.Fatal(w.Header())
+			}
+		}
+	}
+}

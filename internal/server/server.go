@@ -19,7 +19,6 @@ import (
 	"mori-s3/internal/backend"
 	"mori-s3/internal/cache"
 	"mori-s3/internal/config"
-	"mori-s3/internal/media"
 	"mori-s3/internal/s3"
 )
 
@@ -232,7 +231,7 @@ func (a *App) object(w http.ResponseWriter, r *http.Request) {
 		mode = a.cfg.DownloadMode
 	}
 	// Only GetObject gets a bearer URL. HEAD/listing remain server-side.
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet || a.renderHTML(key, download) {
 		mode = "proxy"
 	}
 	w.Header().Set("X-Delivery-Mode", mode)
@@ -252,10 +251,7 @@ func (a *App) object(w http.ResponseWriter, r *http.Request) {
 		a.serveObject(w, r, key, download)
 		return
 	}
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	contentType, disposition := media.Presentation(key, download)
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", disposition)
+	a.objectPresentation(w, key, download)
 	resp, e := a.s3.Object(r.Context(), r.Method, key, r.Header)
 	if e != nil {
 		a.upstreamFail(w, e)
@@ -298,10 +294,7 @@ func (a *App) serveObject(w http.ResponseWriter, r *http.Request, key string, do
 		return
 	}
 	h := w.Header()
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	contentType, disposition := media.Presentation(key, download)
-	h.Set("Content-Type", contentType)
-	h.Set("Content-Disposition", disposition)
+	a.objectPresentation(w, key, download)
 	h.Set("Accept-Ranges", "bytes")
 	if st.ETag != "" {
 		h.Set("ETag", st.ETag)
