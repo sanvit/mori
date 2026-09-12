@@ -7,7 +7,7 @@ COPY tools/vendor.py tools/vendor.py
 COPY web/preview.js web/preview.js
 RUN python tools/vendor.py
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY . .
 COPY --from=assets /src/web/vendor web/vendor
