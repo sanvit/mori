@@ -1,7 +1,7 @@
 # Standalone: only mori runs. Storage (S3 by default; WebDAV/FTP/SFTP via
 # STORAGE_BACKEND) is contacted directly.
 # cp .env.example .env, then set the storage settings and browser authentication.
-# Optional disk cache: add -f compose.cache.yaml (see README.md).
+# An existing S3 object proxy can be configured with BROWSER_PROXY_URL.
 services:
   browser:
     build: .

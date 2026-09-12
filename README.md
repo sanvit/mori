@@ -2,9 +2,9 @@
 
 h5ai처럼 경로와 파일 목록 위주로 사용하는 읽기 전용 파일 브라우저입니다. 저장소로 **S3, WebDAV, FTP/FTPS, SFTP**를 지원합니다. 서버는 Go로 작성했고 외부 의존성은 FTP·SFTP 클라이언트뿐입니다. 목록은 HTML/CSS/JavaScript로 작성했습니다. 미디어 컨트롤은 Media Chrome, PDF는 PDF.js를 사용합니다. h5ai 자체를 수정한 프로젝트는 아닙니다.
 
-## 0.5.0 — 모바일 / 미리보기
+## 모바일 / 미리보기
 
-파일 이름을 누르면 이미지·오디오·영상·PDF·텍스트 미리보기를 엽니다. 모바일에서는 크기/수정일을 파일명 아래에 표시하고, 전체 화면 미리보기와 하단 선택 다운로드 바를 제공합니다. Media Chrome 4.19.2 / PDF.js 6.3.289를 고정하고 **빌드 시 수집, 실행 시 같은 서버에서 제공**합니다. [미리보기 설정·형식·CORS·유지보수](docs/PREVIEW.md)를 참고하세요.
+파일 이름을 누르면 이미지·오디오·영상·PDF·텍스트 미리보기를 엽니다. 모바일에서는 크기/수정일을 파일명 아래에 표시하고, 전체 화면 미리보기와 하단 선택 다운로드 바를 제공합니다. Media Chrome과 PDF.js를 **빌드 시 수집, 실행 시 같은 서버에서 제공**합니다. [미리보기 설정·형식·CORS·유지보수](docs/PREVIEW.md)를 참고하세요.
 
 이 소스 ZIP에는 외부 뷰어 배포 파일을 미리 넣지 않았습니다. Docker 빌드가 가져오므로 **빌드 환경에는 인터넷 접근이 필요**합니다. Chromium에서 실제 Media Chrome 오디오 및 PDF.js, WebKit에서 PDF.js 렌더링을 검증했습니다. 아이폰 실기기와 운영 저장소는 별도 확인이 필요합니다. 완료한 검사와 제한은 [검증 기록](docs/VERIFICATION.md)에 구분했습니다.
 
@@ -22,17 +22,11 @@ docker compose up --build -d
 
 기본 접속 주소는 `http://localhost:8080`입니다. **기본 Compose는 mori 컨테이너 하나만 실행합니다. 외부 캐시 프록시, Redis, DB가 없어도 S3 목록·미리보기·개별 다운로드·재귀 ZIP이 동작합니다.** `.env`의 `BROWSER_PROXY_URL`은 비워 두세요. `proxy` 전달 모드는 mori의 중계를 뜻하며 별도 프록시가 필수라는 뜻이 아닙니다. S3 저장소와 네트워크 접근은 필요합니다.
 
-단독 실행에도 `BROWSER_LIST_TTL`의 목록 메모리 캐시는 있습니다. **파일 본문의 디스크/세그먼트 캐시는 내장하지 않았습니다.** `CACHE_ENABLED=true`만으로 내장 캐시가 생기지는 않습니다.
+단독 실행에도 `BROWSER_LIST_TTL`의 목록 메모리 캐시는 있습니다. **파일 본문의 디스크/세그먼트 캐시는 내장하지 않았습니다.** 모드 분리와 공통 객체 캐시는 [통합 설계](docs/UNIFIED-SERVER-DESIGN.md)에 정리되어 있으며 아직 실행 코드에 적용하지 않았습니다.
 
-### 선택 사항: 객체 디스크 캐시
+### 선택 사항: 외부 객체 프록시
 
-`s3-proxy` 캐시를 함께 실행할 때만 추가 Compose 파일을 지정합니다.
-
-```sh
-docker compose -f compose.yaml -f compose.cache.yaml up --build -d
-```
-
-이때만 mori의 `BROWSER_PROXY_URL`을 `http://cache-proxy:8080`으로 설정하고 캐시 상태를 기다립니다. 캐시 프록시 소스는 고정 커밋을 원격 빌드하므로 빌드에 인터넷이 필요합니다. 출처와 고정 커밋은 `NOTICE.md`에 있습니다. 캐시 프록시 코드를 이 저장소에 복사하지 않았습니다. 이미 실행 중인 호환 프록시가 있다면 추가 Compose 없이 `BROWSER_PROXY_URL`만 그 주소로 설정해도 됩니다.
+이미 운영 중인 S3 호환 객체 프록시가 있으면 `BROWSER_PROXY_URL`에 그 주소를 설정할 수 있습니다. Compose는 mori 하나만 실행하며 프록시를 설치하거나 시작하지 않습니다. 저장소 연결과 캐시 정책은 외부 프록시에서 설정하세요. 없는 파일이 HTML로 대체되지 않도록 해당 프록시의 디렉터리 인덱스·SPA fallback·사용자 오류 페이지를 꺼야 합니다.
 
 이전의 캐시 포함 Compose에서 단독 실행으로 바꿀 때에는 `.env`의 `BROWSER_PROXY_URL`을 비우고 다음처럼 불필요한 컨테이너를 제거합니다. 기존 캐시 볼륨은 삭제하지 않습니다.
 
@@ -45,11 +39,11 @@ docker compose up --build -d --remove-orphans
 직접 실행도 가능합니다.
 
 ```sh
-make assets     # Python 3, 빌드용 정적 파일 수집
+make assets     # Python, 빌드용 정적 파일 수집
 make run        # 또는 make build -> bin/mori
 ```
 
-`.env`를 읽으며 프로세스 환경변수가 우선합니다. Go 1.26 이상이 필요합니다. Docker 전체 빌드/기동은 이번 환경에서 검증하지 않았습니다. 테스트용 의존성은 `tests/requirements.txt`에 있고 서버 실행에는 필요하지 않습니다.
+`.env`를 읽으며 프로세스 환경변수가 우선합니다. Go 요구사항은 `go.mod`를 따릅니다. Docker 전체 빌드/기동은 이번 환경에서 검증하지 않았습니다. 테스트용 의존성은 `tests/requirements.txt`에 있고 서버 실행에는 필요하지 않습니다.
 
 최소 설정:
 
@@ -110,7 +104,7 @@ SFTP_PATH=/srv/files
 
 백엔드별 동작과 제한:
 
-- **파일 버전 확인.** S3는 ETag를 씁니다. WebDAV는 서버의 강한 ETag가 있으면 쓰고, 없으면 크기와 수정 시각으로 만듭니다. FTP·SFTP는 크기와 수정 시각으로 만듭니다. ZIP 도중 파일이 바뀌면 크기·시각 비교와 전송 길이 검사로 중단합니다. 다만 FTP `LIST`는 보통 분 단위 시각만 주므로, 같은 분 안에 크기를 유지한 채 바뀐 파일은 감지하지 못합니다.
+- **파일 변경 확인.** S3는 ETag를 씁니다. WebDAV는 서버의 강한 ETag가 있으면 쓰고, 없으면 크기와 수정 시각으로 만듭니다. FTP·SFTP는 크기와 수정 시각으로 만듭니다. ZIP 도중 파일이 바뀌면 크기·시각 비교와 전송 길이 검사로 중단합니다. 다만 FTP `LIST`는 보통 분 단위 시각만 주므로, 같은 분 안에 크기를 유지한 채 바뀐 파일은 감지하지 못합니다.
 - **WebDAV**는 `PROPFIND`(Depth 0/1)와 Range GET을 씁니다. Basic 인증만 지원하며 다른 호스트를 가리키는 href는 무시합니다.
 - **FTP**는 로그인된 연결을 최대 4개까지 재사용합니다. 목록 조회는 서버가 지원하면 MLSD, 아니면 LIST를 씁니다. 심볼릭 링크는 목록에서 뺍니다. 없는 폴더를 빈 목록으로 답하는 서버(vsftpd 등)에서도 404를 돌려주도록 상위 폴더를 확인합니다.
 - **SFTP**는 SSH 연결 하나를 모든 요청이 공유하고, 끊기면 다음 요청에서 다시 연결합니다. **호스트 키 검증이 기본**이며 `SFTP_KNOWN_HOSTS`가 필요합니다. 파일을 가리키는 심볼릭 링크는 따라가고, 폴더 링크는 순환을 막기 위해 목록에서 뺍니다.
@@ -152,7 +146,7 @@ BROWSER_PRESIGN_TTL=15m
 S3 → [선택: s3-proxy 캐시] → mori → 사용자
 ```
 
-mori가 파일을 스트리밍합니다. `BROWSER_PROXY_URL`을 지정하면 객체 본문을 기존 캐시 프록시에서 받고, 비우면 S3에서 직접 받아 전달합니다. **URL을 비워도 사용자가 S3에 직접 접속하는 것이 아니라 mori를 거칩니다.** 기본 Compose는 외부 프록시를 강제하지 않으며, 선택 파일 `compose.cache.yaml`을 추가할 때만 `http://cache-proxy:8080`으로 설정합니다.
+mori가 파일을 스트리밍합니다. `BROWSER_PROXY_URL`을 지정하면 객체 본문을 외부 프록시에서 받고, 비우면 S3에서 직접 받아 전달합니다. **URL을 비워도 사용자가 S3에 직접 접속하는 것이 아니라 mori를 거칩니다.** Compose는 외부 프록시를 실행하지 않습니다.
 
 개별 파일의 GET/HEAD, Range와 조건부 요청을 전달합니다. 파일 전체를 RAM이나 완성 임시 파일로 모으지 않습니다. 프록시 사용 시 실제 캐시 디스크/세그먼트 버퍼는 별도 프록시가 사용합니다.
 
@@ -229,7 +223,7 @@ files.zip (현재 폴더가 docs/이면 docs.zip)
 
 ### 변경 / 중단 / 이어받기
 
-ZIP 전송은 HEAD 또는 재귀 LIST에서 확인한 ETag로 If-Match를 보내고 GET 응답 ETag와 길이도 확인합니다. 파일 변경이나 원본 실패가 응답 시작 전이면 오류를 반환하고, 시작 후이면 연결을 중단합니다. 일부 파일만 든 ZIP을 성공한 것처럼 완성하지 않습니다. 캐시 프록시가 오래된 버전을 반환하는 경우에도 ETag가 다르면 실패합니다.
+ZIP 전송은 HEAD 또는 재귀 LIST에서 확인한 ETag로 If-Match를 보내고 GET 응답 ETag와 길이도 확인합니다. 파일 변경이나 원본 실패가 응답 시작 전이면 오류를 반환하고, 시작 후이면 연결을 중단합니다. 일부 파일만 든 ZIP을 성공한 것처럼 완성하지 않습니다. 캐시 프록시가 오래된 내용을 반환하는 경우에도 ETag가 다르면 실패합니다.
 
 S3의 여러 페이지 목록 조회와 파일 다운로드를 하나의 원자적 스냅샷으로 만들지는 않습니다. 준비 도중 추가된 파일이 모두 포함된다고 보장하지 않으며, 준비한 파일이 이후 변경/삭제되면 오류로 처리합니다. 클라이언트 연결 종료는 재귀 LIST와 진행 중 S3/프록시 요청에 전파합니다. 동적 ZIP에는 완성본과 고정 Content-Length가 없으며 **Range 이어받기는 지원하지 않습니다**. 중단/실패하면 다시 선택해 새 ZIP을 요청해야 합니다. 전체 백분율 표시도 브라우저에 따라 제한됩니다.
 
@@ -239,7 +233,7 @@ S3의 여러 페이지 목록 조회와 파일 다운로드를 하나의 원자�
 
 목록은 기존처럼 `ListObjectsV2(prefix=현재 경로, delimiter=/, max-keys=1000)`으로 한 단계씩 읽습니다. **하위 폴더 안의 파일 10,000개는 상위 목록에서 폴더 한 항목**입니다. 하위 파일을 모두 읽어서 숨기는 구조가 아니고 파일 본문도 받지 않습니다.
 
-현재 단계의 파일과 바로 아래 폴더 항목들이 한 응답에 다 들어오지 않을 때만 continuation token으로 다음 페이지를 읽습니다. 다음 요청에도 prefix/delimiter를 유지합니다. ‘더 불러오기’ 전에는 다음 페이지를 자동 순회하지 않으며 정렬도 불러온 항목에만 적용합니다. 다음 페이지가 있으면 하단에 표시합니다. 검색창과 파일명 필터는 제거되어 있습니다. 별도 전체 키 검색 인덱스도 만들지 않습니다. 이 동작과 `delimiter=/` 한 단계 조회는 0.3.0에도 이미 들어가 있었습니다.
+현재 단계의 파일과 바로 아래 폴더 항목들이 한 응답에 다 들어오지 않을 때만 continuation token으로 다음 페이지를 읽습니다. 다음 요청에도 prefix/delimiter를 유지합니다. ‘더 불러오기’ 전에는 다음 페이지를 자동 순회하지 않으며 정렬도 불러온 항목에만 적용합니다. 다음 페이지가 있으면 하단에 표시합니다. 검색창과 파일명 필터는 없으며 별도 전체 키 검색 인덱스도 만들지 않습니다.
 
 `BROWSER_LIST_TTL=30s`는 폴더 목록 메모리 캐시이며 `0s`로 끌 수 있습니다. 최대 512페이지를 보관합니다. 새로고침은 현재 폴더 첫 페이지 목록 캐시를 우회하며 객체 캐시를 삭제하지 않습니다.
 
@@ -247,9 +241,9 @@ S3의 여러 페이지 목록 조회와 파일 다운로드를 하나의 원자�
 
 Compose는 기본적으로 브라우저 포트를 127.0.0.1에만 바인딩합니다. 외부 제공 시 HTTPS와 인증을 유지하세요. 캐시 프록시에는 브라우저 인증이 없으므로 내부 포트를 외부에 공개하지 마세요. S3 비공개 버킷이어도 `BROWSER_PUBLIC=true`면 mori가 그 범위를 사용자에게 제공할 수 있습니다.
 
-선택 캐시 서비스를 사용하는 경우에만 두 서비스의 버킷과 prefix를 일치시켜야 합니다. 캐시 ENV 이름과 기본값은 기존 `s3-proxy` 방식을 유지했습니다. 디렉터리 인덱스, SPA fallback, 커스텀 오류 페이지는 없는 객체가 정상 HTML로 대체되지 않도록 꺼 두었습니다.
+외부 프록시를 사용하는 경우 두 서비스의 버킷과 prefix를 일치시켜야 합니다. 캐시 ENV는 해당 프록시 환경에서 설정합니다. 디렉터리 인덱스, SPA fallback, 커스텀 오류 페이지는 없는 객체가 정상 HTML로 대체되지 않도록 외부 프록시에서 꺼야 합니다.
 
-새 소스를 적용한 뒤 `docker compose up --build -d`로 재빌드하세요. ENV만 바꾸었다면 `docker compose up -d --force-recreate`로 반영합니다. 선택 캐시를 쓰는 경우 이 명령들에도 `-f compose.yaml -f compose.cache.yaml`을 동일하게 추가하세요. 직접 실행 중이면 프로세스를 재시작하세요.
+새 소스를 적용한 뒤 `docker compose up --build -d`로 재빌드하세요. ENV만 바꾸었다면 `docker compose up -d --force-recreate`로 반영합니다. 직접 실행 중이면 프로세스를 재시작하세요.
 
 ## 코드 구조
 
@@ -294,8 +288,8 @@ python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP
 
 ## 공식 문서 / 출처
 
-- Media Chrome 4.19.2: https://github.com/muxinc/media-chrome/releases/tag/v4.19.2
-- PDF.js 6.3.289: https://github.com/mozilla/pdf.js/releases/tag/v6.3.289
+- Media Chrome: https://github.com/muxinc/media-chrome
+- PDF.js: https://github.com/mozilla/pdf.js
 - Media Chrome 사용법: https://www.media-chrome.org/docs/en/get-started
 - PDF.js API: https://mozilla.github.io/pdf.js/api/draft/module-pdfjsLib.html
 - S3 CORS: https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html
@@ -307,7 +301,6 @@ python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP
 - Go ZIP Store: https://pkg.go.dev/archive/zip
 - Go ZIP writer: https://go.dev/src/archive/zip/writer.go
 - Compose 파일 병합: https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/
-- 캐시 프록시 출처와 커밋: `NOTICE.md`
 
 
 ### HTML 렌더링 및 PDF 스크롤

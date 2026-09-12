@@ -1,4 +1,4 @@
-# 모바일 / 미리보기 — 0.5.0
+# 모바일 / 미리보기
 
 ## 화면과 조작
 
@@ -25,34 +25,25 @@
 
 ## 유지보수 중인 의존성
 
-2026-09-09 공식 GitHub latest stable 확인 기준입니다. 향후 유지보수나 호환성을 보증한다는 의미는 아닙니다. Plyr의 유지보수 중단을 단정하지 않고, 이번 구현에는 아래 안정판을 선택했습니다.
-
-| 역할 | 고정 버전 | 공식 릴리스 |
-|---|---|---|
-| 오디오/영상 컨트롤 | Mux Media Chrome 4.19.2 | 2026-06-10 |
-| PDF 엔진 | Mozilla PDF.js 6.3.289 | 2026-08-29 |
-
-Media Chrome: https://github.com/muxinc/media-chrome/releases/tag/v4.19.2
-
-PDF.js: https://github.com/mozilla/pdf.js/releases/tag/v6.3.289
+오디오·영상 컨트롤에는 [Media Chrome](https://github.com/muxinc/media-chrome), PDF 렌더링에는 [PDF.js](https://github.com/mozilla/pdf.js)를 사용합니다. 의존성 설정은 `package.json`에서 관리합니다.
 
 Media Chrome의 번들된 Web Components와 PDF.js legacy 빌드를 사용합니다. 별도의 React/Vue, UI 프레임워크, 플레이리스트 서비스는 없습니다. 이미지·텍스트에는 추가 라이브러리를 사용하지 않습니다.
 
 ## 빌드: 외부 요청은 빌드할 때만
 
-이 소스 ZIP에는 두 라이브러리의 배포 파일을 미리 넣지 않았습니다. **Docker 빌드의 assets 단계가 고정 버전의 공식 npm 패키지를 내려받습니다.** 이 단계는 인터넷 접근이 필요하며, 실패하면 이미지 빌드도 실패합니다. 고정 버전의 registry metadata와 tarball URL, SHA-512 integrity를 확인하고 필요한 브라우저 파일만 복사합니다. npm lifecycle 스크립트나 임의 transitive 패키지를 실행하지 않습니다.
+이 소스 ZIP에는 두 라이브러리의 배포 파일을 미리 넣지 않았습니다. **Docker 빌드의 assets 단계가 설정된 공식 npm 패키지를 내려받습니다.** 이 단계는 인터넷 접근이 필요하며, 실패하면 이미지 빌드도 실패합니다. 패키지의 registry metadata와 tarball URL, SHA-512 integrity를 확인하고 필요한 브라우저 파일만 복사합니다. npm lifecycle 스크립트나 임의 transitive 패키지를 실행하지 않습니다.
 
 ```sh
 # Docker: assets 수집 -> Go 테스트/빌드 -> 단일 런타임 컨테이너
 docker compose up --build -d
 
-# 로컬: Python 3 + Go, 자산을 먼저 준비합니다.
+# 로컬: Python + Go, 자산을 먼저 준비합니다.
 make assets
 make run
 # 또는 make build -> bin/mori
 ```
 
-생성 파일은 `web/vendor/`에 있고 `manifest.json`에 패키지 무결성과 파일 SHA-256을 기록합니다. PDF.js worker, CMap, WASM 및 표준 폰트 데이터도 이 빌드 단계에서 가져옵니다. 실행 시에는 Go 바이너리에 임베드한 파일을 **같은 서버의 버전별 `/vendor/` 경로**에서 제공하며 외부 CDN, Node/Python 서버가 필요 없습니다. 파일 미리보기를 열 때 필요한 엔진만 지연 로드합니다. 외부 S3 직접 요청은 `presigned` 모드의 파일 본문 접근에만 사용합니다.
+생성 파일은 `web/vendor/`에 있고 `manifest.json`에 패키지 무결성과 파일 SHA-256을 기록합니다. PDF.js worker, CMap, WASM 및 표준 폰트 데이터도 이 빌드 단계에서 가져옵니다. 실행 시에는 Go 바이너리에 임베드한 파일을 **같은 서버의 `/vendor/` 경로**에서 제공하며 외부 CDN, Node/Python 서버가 필요 없습니다. 파일 미리보기를 열 때 필요한 엔진만 지연 로드합니다. 외부 S3 직접 요청은 `presigned` 모드의 파일 본문 접근에만 사용합니다.
 
 인터넷이 차단된 환경은 네트워크가 가능한 빌드 환경에서 이미지를 만든 뒤 옮기세요. `go run ./cmd/mori`만 하고 assets를 준비하지 않으면 서버는 경고를 내며 목록/다운로드는 동작하나, Media Chrome 대신 기본 재생 컨트롤이 나오고 PDF.js 미리보기는 사용할 수 없습니다. 의도치 않은 불완전 빌드를 피하려면 `make build` 또는 Dockerfile을 사용하세요.
 
@@ -102,9 +93,9 @@ PDF.js는 Range와 화면 주변 페이지 렌더링을 사용하며 자동 선�
 
 ## 업데이트 절차
 
-`package.json` 버전은 범위가 아닌 정확한 버전입니다. `web/preview.js`의 `LIB` 경로도 함께 변경하고 `python3 tools/vendor.py --force`로 다시 준비하세요. 버전 경로가 어긋나면 installer는 실패합니다. `python3 tools/vendor.py --check`는 로컬 파일 해시를 검증하며 네트워크를 사용하지 않습니다.
+의존성을 변경할 때는 `package.json`과 `web/preview.js`의 `LIB` 경로를 함께 갱신하고 `python3 tools/vendor.py --force`로 다시 준비하세요. 패키지와 경로가 어긋나면 installer는 실패합니다. `python3 tools/vendor.py --check`는 로컬 파일 해시를 검증하며 네트워크를 사용하지 않습니다.
 
-`.github/dependabot.yml`에는 주간 npm 업데이트 제안 설정을 넣었습니다. 실제 GitHub 저장소에 올리고 Dependabot이 활성화되어야 동작하며, 자동 병합이나 런타임 최신 버전 로드는 하지 않습니다. 업데이트 PR은 위 경로 동기화와 실브라우저 검사를 거쳐 적용하세요.
+`.github/dependabot.yml`에는 주간 npm 업데이트 제안 설정을 넣었습니다. 실제 GitHub 저장소에 올리고 Dependabot이 활성화되어야 동작하며, 자동 병합이나 런타임 자동 업데이트는 하지 않습니다. 업데이트 PR은 위 경로 동기화와 실브라우저 검사를 거쳐 적용하세요.
 
 ## 검증 구분
 
@@ -134,10 +125,10 @@ PDF는 페이지를 세로로 연속 스크롤하며 화면 주변 페이지만 
 모바일에서도 새 탭 버튼을 표시하고, 모든 미리보기에서 하단 기술 정보를 생략합니다.
 
 
-### iOS 18 PDF 호환성
+### Safari PDF 호환성
 
-PDF.js 6.3.289의 `getTextContent()`는 iOS 18에 없는 `ReadableStream` 비동기
-이터레이터를 사용합니다. 앱은 `streamTextContent().getReader()`로 텍스트를 읽어
+PDF.js의 `getTextContent()`는 일부 Safari 환경에서 제공하지 않는 `ReadableStream` 비동기
+이터레이터에 의존합니다. 앱은 `streamTextContent().getReader()`로 텍스트를 읽어
 이 의존성을 피하고, 텍스트 추출 실패가 이미 그린 페이지를 오류 화면으로 덮지 않도록 처리합니다.
 [PDF.js Safari 오류 보고](https://github.com/mozilla/pdf.js/issues/20973).
 
@@ -145,4 +136,4 @@ PDF.js 6.3.289의 `getTextContent()`는 iOS 18에 없는 `ReadableStream` 비동
 다운로드는 `attachment`로 전달합니다. S3 presigned URL에도 같은 응답 값을 서명합니다.
 일부 WebKit의 기본 PDF 뷰어와 충돌하는 CSP `sandbox`는 인라인 PDF 응답에만 생략하며,
 HTML/SVG/텍스트의 격리는 유지합니다.
-[WebKit 수정 기록](https://webkit.org/blog/16445/release-notes-for-safari-technology-preview-212/).
+[WebKit](https://webkit.org/).

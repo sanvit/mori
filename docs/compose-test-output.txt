@@ -1,2 +1,0 @@
-PASS static YAML: standalone has one local service, no cache dependency/volume; cache is an explicit opt-in overlay with no published cache port.
-Not executed: Docker build, Compose config interpolation/merge, container startup.
