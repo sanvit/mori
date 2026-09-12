@@ -218,25 +218,10 @@ func (a *App) object(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	download := r.URL.Query().Get("download") == "1"
-	mode := a.cfg.PreviewMode
-	if download {
-		mode = a.cfg.DownloadMode
-	}
-	// Only GetObject gets a bearer URL. HEAD/listing remain server-side.
-	if r.Method != http.MethodGet || a.renderHTML(key, download) {
-		mode = "proxy"
-	}
+	mode := a.deliveryMode(r, key, download)
 	w.Header().Set("X-Delivery-Mode", mode)
-	if mode == "presigned" && a.s3 != nil {
-		link, err := a.s3.Presign(r.Method, key, download, time.Now())
-		if err != nil {
-			a.upstreamFail(w, err)
-			return
-		}
-		// No redirect body or access log contains the bearer URL. Sign the final
-		// public endpoint, never replace its hostname after signing.
-		w.Header().Set("Location", link)
-		w.WriteHeader(http.StatusTemporaryRedirect)
+	if mode == "presigned" {
+		a.presignRedirect(w, r, key, download)
 		return
 	}
 	if a.objectCacheEnabled {

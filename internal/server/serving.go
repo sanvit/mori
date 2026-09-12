@@ -131,11 +131,41 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
+	// A file path may ask for an attachment the way the object API does, and
+	// follows the same proxy/presigned delivery choice. The flag only selects
+	// presentation, so it is removed before the cache key is derived and the
+	// same body is not stored a second time under it.
+	download := false
+	if a.cfg.ServeMode == "browser" {
+		if q := r.URL.Query(); q.Has("download") {
+			download = q.Get("download") == "1"
+			r = r.Clone(r.Context())
+			q.Del("download")
+			r.URL.RawQuery = q.Encode()
+		}
+		key := strings.TrimPrefix(r.URL.Path, "/")
+		mode := a.deliveryMode(r, key, download)
+		w.Header().Set("X-Delivery-Mode", mode)
+		if mode == "presigned" {
+			a.presignRedirect(w, r, key, download)
+			return
+		}
+	}
 	// Cache stores origin headers. Per-response browser/auth policy is applied
 	// only when headers reach the public connection.
-	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(h http.Header) {
+	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(status int, h http.Header) {
 		if a.cfg.ServeMode == "browser" {
-			a.objectPresentation(w, strings.TrimPrefix(r.URL.Path, "/"), false)
+			if status < 400 {
+				a.objectPresentation(w, strings.TrimPrefix(r.URL.Path, "/"), download)
+			} else {
+				// The body is an index, SPA or error page, not the requested
+				// object. Presenting it as that object would label HTML with the
+				// missing file's type and name. Keep the served page's own type
+				// and still deny it scripts and embedding.
+				w.Header().Del("Content-Disposition")
+				w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+				w.Header().Set("X-Frame-Options", "DENY")
+			}
 			w.Header().Set("Cache-Control", "private, no-store")
 		} else if a.cfg.Username != "" {
 			value := w.Header().Get("Cache-Control")
@@ -156,6 +186,34 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 	a.objects.ServeHTTP(wrapped, r)
 }
 
+// deliveryMode picks proxy or presigned delivery for one read. Only a plain
+// object GET can be handed to storage directly: HEAD and listing stay
+// server-side, and an HTML preview needs mori's own sandbox headers.
+func (a *App) deliveryMode(r *http.Request, key string, download bool) string {
+	if r.Method != http.MethodGet || a.s3 == nil || a.renderHTML(key, download) {
+		return "proxy"
+	}
+	if download {
+		return a.cfg.DownloadMode
+	}
+	return a.cfg.PreviewMode
+}
+
+// presignRedirect sends the visitor to a bearer URL. The object cache is
+// bypassed, and so are the index, SPA and custom error pages, because the
+// storage answers a miss itself.
+func (a *App) presignRedirect(w http.ResponseWriter, r *http.Request, key string, download bool) {
+	link, err := a.s3.Presign(r.Method, key, download, time.Now())
+	if err != nil {
+		a.upstreamFail(w, err)
+		return
+	}
+	// No redirect body or access log contains the bearer URL. Sign the final
+	// public endpoint, never replace its hostname after signing.
+	w.Header().Set("Location", link)
+	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
 func (a *App) cachedObject(w http.ResponseWriter, r *http.Request, key string, download bool) {
 	a.objectPresentation(w, key, download)
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -166,7 +224,7 @@ func (a *App) cachedObject(w http.ResponseWriter, r *http.Request, key string, d
 	}
 	copyReq := r.Clone(r.Context())
 	copyReq.URL.RawQuery = ""
-	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(h http.Header) {
+	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(status int, h http.Header) {
 		a.objectPresentation(w, key, download)
 		w.Header().Set("Cache-Control", "private, no-store")
 	}}
@@ -215,7 +273,7 @@ func (w *trackedResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter
 type policyResponse struct {
 	http.ResponseWriter
 	header  http.Header
-	apply   func(http.Header)
+	apply   func(int, http.Header)
 	started bool
 }
 
@@ -228,7 +286,7 @@ func (w *policyResponse) WriteHeader(status int) {
 	for k, v := range w.header {
 		w.ResponseWriter.Header()[k] = v
 	}
-	w.apply(w.header)
+	w.apply(status, w.header)
 	w.ResponseWriter.WriteHeader(status)
 }
 func (w *policyResponse) Write(b []byte) (int, error) {

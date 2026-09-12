@@ -9,13 +9,15 @@ mori 실행 파일 하나가 파일 브라우저와 사이트 제공, 공통 디
 | 경로/기능 | browser | spa | direct |
 |---|---|---|---|
 | `/` | 기존 파일 브라우저 | 원본 인덱스 | 원본 인덱스 |
-| `/폴더/파일` | 안전한 파일 표시/다운로드 | 원본 사이트 응답 | 원본 사이트 응답 |
+| `/폴더/파일` | 안전한 파일 표시, `?download=1`로 첨부, 전달 설정 적용 | 원본 사이트 응답 | 원본 사이트 응답 |
 | `/_mori/api/config,list,preview,archive` | 기존 API 계약 유지 | 404 | 404 |
-| `/_mori/api/object?key=…` | 정확한 객체, 기존 전달 설정 | 정확한 객체, 안전한 표시 | 정확한 객체, 안전한 표시 |
+| `/_mori/api/object?key=…` | 정확한 객체, proxy/presigned 전달 설정 | 정확한 객체, 안전한 표시 | 정확한 객체, 안전한 표시 |
 | `/_mori/assets/…`, `/_mori/vendor/…` | 내장 UI와 뷰어 | 404 | 404 |
 | `/_mori/healthz` | 상태 검사 | 상태 검사 | 상태 검사 |
 | SPA fallback | 없음 | HTML 탐색의 원본404에 적용 | 없음 |
 | 사용자 오류 페이지 | 파일 경로에 적용 | 파일 경로에 적용 | 파일 경로에 적용 |
+
+파일 경로의 `?download=1`은 표시 방식만 바꾼다. 캐시 키를 만들기 전에 제거하므로 같은 본문이 두 벌 저장되지 않는다. browser 모드의 파일 경로와 object API는 같은 규칙으로 proxy/presigned를 고른다: GET이면서 HTML 미리보기가 아니고 S3일 때만 presign하고, `download` 여부에 따라 `BROWSER_DOWNLOAD_MODE`와 `BROWSER_PREVIEW_MODE`를 각각 적용한다. presign한 요청은 저장소가 직접 응답하므로 내부 캐시와 index·SPA·사용자 오류 페이지를 거치지 않는다. spa/direct의 파일 경로는 사이트 자체이므로 presign하지 않고 언제나 mori를 경유한다. 파일 경로가 index·SPA·오류 페이지로 대체되면 응답 본문은 요청한 객체가 아니므로 그 객체의 MIME·파일명을 붙이지 않고, 제공된 페이지 자신의 Content-Type에 sandbox CSP를 적용한다.
 
 `/_mori/` 전체는 내부 예약 공간이다. 그 이름의 저장소 객체도 object API의 key로 읽을 수 있다. 이전 `/api/`, `/app.js`, `/vendor/`에는 alias나 redirect를 두지 않으며 이제 저장소 파일 경로다. ZIP token 검증과 뷰어 worker·CMap·WASM·폰트 URL도 함께 이전했다. 디스크의 `web/vendor` 위치는 그대로다.
 

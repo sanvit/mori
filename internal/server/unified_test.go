@@ -159,3 +159,46 @@ func TestUnifiedZIPUsesCacheAndFreshValidators(t *testing.T) {
 		t.Fatal(health.Body.String())
 	}
 }
+
+// A file path serves the same body as the object API and may ask for an
+// attachment, without caching that body twice or letting a fallback page be
+// labelled as the object that was missing.
+func TestFilePathDownloadFlagAndFallbackPresentation(t *testing.T) {
+	a, m, _ := unifiedFixture(t, "browser", true)
+	first := call(a, "GET", "/docs/a.txt", nil)
+	if first.Code != 200 || first.Header().Get("X-Cache") != "MISS" || first.Header().Get("Content-Disposition") != "inline; filename=a.txt" {
+		t.Fatal(first.Code, first.Header())
+	}
+	opens := m.opens.Load()
+
+	attachment := call(a, "GET", "/docs/a.txt?download=1", nil)
+	if attachment.Code != 200 || attachment.Body.String() != m.files["docs/a.txt"] {
+		t.Fatal(attachment.Code, attachment.Body.String())
+	}
+	if !strings.HasPrefix(attachment.Header().Get("Content-Disposition"), "attachment;") {
+		t.Fatal("download flag ignored on a file path", attachment.Header().Get("Content-Disposition"))
+	}
+	// The flag must not reach the cache key: the body is already stored.
+	if attachment.Header().Get("X-Cache") != "HIT" || m.opens.Load() != opens {
+		t.Fatal("download flag cached the body again", attachment.Header().Get("X-Cache"), m.opens.Load(), opens)
+	}
+	if plain := call(a, "GET", "/docs/a.txt", nil); plain.Header().Get("Content-Disposition") != "inline; filename=a.txt" {
+		t.Fatal("flag leaked into a later request", plain.Header().Get("Content-Disposition"))
+	}
+
+	// The 404 body is 404.html, so it must not be typed or named as the file
+	// that was requested and could not be found.
+	missing := call(a, "GET", "/missing.txt", nil)
+	if missing.Code != 404 || missing.Body.String() != m.files["404.html"] {
+		t.Fatal(missing.Code, missing.Body.String())
+	}
+	if ct := missing.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatal("error page served as the missing file's type", ct)
+	}
+	if cd := missing.Header().Get("Content-Disposition"); strings.Contains(cd, "missing.txt") {
+		t.Fatal("error page named after the missing file", cd)
+	}
+	if csp := missing.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") {
+		t.Fatal("error page is not sandboxed", csp)
+	}
+}
