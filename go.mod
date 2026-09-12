@@ -8,7 +8,7 @@ require (
 	github.com/pkg/sftp v1.13.11
 	github.com/spf13/afero v1.15.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.58.0
+	golang.org/x/net v0.59.0
 )
 
 require (
