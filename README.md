@@ -20,19 +20,89 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-기본 접속 주소는 `http://localhost:8080`입니다. **기본 Compose는 mori 컨테이너 하나만 실행합니다. 외부 캐시 프록시, Redis, DB가 없어도 S3 목록·미리보기·개별 다운로드·재귀 ZIP이 동작합니다.** `.env`의 `BROWSER_PROXY_URL`은 비워 두세요. `proxy` 전달 모드는 mori의 중계를 뜻하며 별도 프록시가 필수라는 뜻이 아닙니다. S3 저장소와 네트워크 접근은 필요합니다.
+기본 접속 주소는 `http://localhost:8080`입니다. **기본 Compose는 mori 컨테이너 하나만 실행합니다. 외부 캐시 프록시, Redis, DB가 없어도 S3 목록·미리보기·개별 다운로드·재귀 ZIP이 동작합니다.** `proxy` 전달 모드는 mori의 중계를 뜻하며 별도 프록시가 필수라는 뜻이 아닙니다. S3 저장소와 네트워크 접근은 필요합니다.
 
-단독 실행에도 `BROWSER_LIST_TTL`의 목록 메모리 캐시는 있습니다. **파일 본문의 디스크/세그먼트 캐시는 내장하지 않았습니다.** 모드 분리와 공통 객체 캐시는 [통합 설계](docs/UNIFIED-SERVER-DESIGN.md)에 정리되어 있으며 아직 실행 코드에 적용하지 않았습니다.
+**객체 캐시가 내장되어 있습니다.** 기본 `CACHE_MODE=internal`에서 S3·WebDAV·FTP/FTPS·SFTP의 파일 본문을 같은 세그먼트 캐시로 처리합니다. `BROWSER_LIST_TTL`의 목록 메모리 캐시는 별개입니다. Compose는 /cache 영속 볼륨을 사용하며 별도 프록시 프로세스는 필요하지 않습니다.
 
-### 선택 사항: 외부 객체 프록시
+### 브라우저·SPA·다이렉트 모드
 
-이미 운영 중인 S3 호환 객체 프록시가 있으면 `BROWSER_PROXY_URL`에 그 주소를 설정할 수 있습니다. Compose는 mori 하나만 실행하며 프록시를 설치하거나 시작하지 않습니다. 저장소 연결과 캐시 정책은 외부 프록시에서 설정하세요. 없는 파일이 HTML로 대체되지 않도록 해당 프록시의 디렉터리 인덱스·SPA fallback·사용자 오류 페이지를 꺼야 합니다.
+| SERVE_MODE | / | 파일 URL | 누락된 HTML 탐색 |
+|---|---|---|---|
+| browser (기본) | 기존 파일 브라우저 | /폴더/파일 | 404 |
+| spa | 원본 index.html | /폴더/파일 | SPA_INDEX로 fallback |
+| direct | 원본 index.html | /폴더/파일 | 404 |
 
-이전의 캐시 포함 Compose에서 단독 실행으로 바꿀 때에는 `.env`의 `BROWSER_PROXY_URL`을 비우고 다음처럼 불필요한 컨테이너를 제거합니다. 기존 캐시 볼륨은 삭제하지 않습니다.
+모든 모드에서 사용자는 S3 키 없이 파일 URL로 다운로드합니다. 서버의 Basic 인증은 별개이며 공개 배포는 `BROWSER_PUBLIC=true`로 명시합니다. `direct`는 mori 경유 URL 제공이고 S3 presign을 뜻하지 않습니다.
 
-```sh
-docker compose up --build -d --remove-orphans
+인증된 SPA/direct란 `BROWSER_USERNAME`·`BROWSER_PASSWORD`로 mori의 Basic 인증을 설정한 경우입니다(`AUTH_MODE=basic`으로 명시 가능). 저장소의 S3 키·FTP 계정과는 별개입니다. `AUTH_MODE=public`은 명시적으로 공개합니다. 여기서 browser 파일은 browser 모드에서 제공하는 **저장소 파일**이며 UI의 JS/CSS를 뜻하지 않습니다.
+
+내부 API는 `/_mori/api/`, UI는 `/_mori/assets/`, 뷰어 리소스는 `/_mori/vendor/`입니다. `/_mori/`는 예약 공간이고 기존 `/api/`, `/app.js` 등은 저장소 파일 경로로 사용할 수 있습니다. 예약 경로와 충돌하는 파일은 `/_mori/api/object?key=…`로 읽습니다. SPA/direct는 목록·미리보기·ZIP API를 노출하지 않으며 정확한 object API만 유지합니다.
+
+`INDEX_DOCUMENT` 미설정 기본은 browser에서 빈 값, spa/direct에서 index.html입니다. 명시적으로 비우면 디렉터리 인덱스를 끕니다. `SPA_INDEX`, `SPA_ALLOW_DOTTED_ROUTES`, `ERROR_PAGE_404`, `ERROR_PAGES_JSON`으로 사이트 동작을 설정합니다. object API와 ZIP의 오류는 SPA/사용자 HTML로 대체하지 않습니다. 전체 대응표는 [구조 문서](docs/ARCHITECTURE.md)를 참고하세요.
+
+### 캐시 정책과 대용량 파일
+
+`SERVE_MODE=browser`에서도 기본 `CACHE_MODE=internal`로 서버 디스크 캐시를 사용합니다. 파일 응답의 `private, no-store`는 사용자 브라우저·중간 프록시의 보관만 막으며, mori 내부의 HIT·구간 캐시·미리 읽기를 끄지 않습니다. SPA/direct는 원본 Cache-Control과 경로별 `browser_ttl`을 반영하고 인증된 응답에는 `private`를 적용합니다. 200/HEAD/304에 같은 응답 정책을 적용합니다. 원본 자체의 `no-store`나 캐시 bypass 규칙은 내부 캐시 여부에도 영향을 줍니다. S3 presigned GET은 mori를 통과하지 않으므로 내부 캐시를 우회합니다.
+
+직접 파일 URL도 UTF-8 `Content-Disposition` 파일명을 제공합니다. 유효한 원본 파일명을 보존하고 없거나 잘못되었으면 실제 파일 경로의 마지막 이름으로 보완합니다. WebDAV의 유효한 원본 ETag는 보존하며, ETag 없는 WebDAV와 FTP/FTPS·SFTP는 저장소 식별값·전체 경로·크기·수정시각으로 약한 ETag를 만듭니다. 같은 크기·수정시각으로 덮어쓴 내용까지 구분하는 내용 해시는 아닙니다. 세부 조건부 요청 및 ZIP 한계는 [구조 문서](docs/ARCHITECTURE.md#내부-연결)를 참고하세요.
+
+기본 8 MiB 블록 / 2 MiB 세그먼트, 요청당 4세그먼트 미리 읽기, 인접 MISS 병합, 진행 중 다운로드 공유, 원본 동시 fill 제한을 제공합니다. TTL·원본 Cache-Control·경로 규칙·쿼리 키 정책·403/404 negative cache·완전 캐시의 stale-if-error도 내장했습니다.
+
+#### 캐시 설정
+
+| 이름 | 기본값 | 설명 |
+|---|---|---|
+| `CACHE_MODE` | `internal` | `internal`은 디스크 캐시 사용, `off`는 디스크를 열지 않고 중계만 |
+| `CACHE_ENABLED` | `true` | `false`는 `CACHE_MODE=off`와 같습니다 |
+| `CACHE_DIR` | `./cache` (Docker `/cache`) | 캐시 루트. 저장소 설정별 namespace를 하위에 만듭니다 |
+| `CACHE_MAX_DISK_SIZE` | `100GB` (`.env.example`은 `100GiB`) | 저장된 세그먼트 바이트 기준. `0`은 무제한 |
+| `CACHE_BLOCK_SIZE` | `8MiB` | 축출(LRU) 단위. 세그먼트 크기의 정확한 배수여야 합니다 |
+| `CACHE_SEGMENT_SIZE` | `2MiB` | 저장·읽기 단위. 최소 256KiB |
+| `CACHE_DOWNLOAD_CONCURRENCY` | `4` | 요청당 미리 읽기 세그먼트 수 (1–256) |
+| `ORIGIN_FETCH_MAX_SIZE` | `16MiB` | 한 번의 원본 Range GET 상한. 세그먼트 크기 이상 |
+| `ORIGIN_MAX_CONCURRENT_REQUESTS` | `32` | 전체 클라이언트 합산 동시 원본 fetch 수 (1–256) |
+
+#### TTL과 캐시 정책
+
+| 이름 | 기본값 | 설명 |
+|---|---|---|
+| `CACHE_DEFAULT_TTL` | `1h` | 원본이 Cache-Control을 주지 않을 때의 메타데이터 TTL |
+| `CACHE_MIN_TTL` / `CACHE_MAX_TTL` | `0s` / `168h` | 계산된 TTL의 하한·상한. `CACHE_MAX_TTL=0`은 상한 없음 |
+| `CACHE_RESPECT_ORIGIN` | `true` | 원본 `s-maxage`/`max-age`/`no-cache`/`no-store`/`private` 반영 |
+| `CACHE_STALE_IF_ERROR` | `24h` | 완전히 캐시된 파일에 한해 원본 장애 시 stale 제공 |
+| `CACHE_NEGATIVE_TTL_404` | `30s` | 404 조회 결과를 메타데이터만 기억하는 시간 |
+| `CACHE_NEGATIVE_TTL_403` | `10s` | 403도 동일. 5xx는 negative 캐시하지 않습니다 |
+| `CACHE_QUERY_MODE` | `sort` | 캐시 키의 쿼리 처리: `sort`/`include`/`ignore` |
+| `CACHE_RULES_JSON` | `[]` | 경로별 규칙 배열. 첫 일치 규칙만 적용 |
+
+`CACHE_RULES_JSON`의 각 항목은 `prefix`, `suffix`, `ttl`, `browser_ttl`, `bypass`, `ignore_query`를 받습니다. `prefix`·`suffix`를 모두 비우면 모든 경로에 적용됩니다.
+
+```dotenv
+CACHE_RULES_JSON=[{"suffix":".m3u8","ttl":"5s","browser_ttl":"0s"},{"prefix":"/private/","bypass":true}]
 ```
+
+#### 사이트와 운영
+
+| 이름 | 기본값 | 설명 |
+|---|---|---|
+| `SERVE_MODE` | `browser` | `browser`/`spa`/`direct` |
+| `INDEX_DOCUMENT` | browser는 빈 값, spa·direct는 `index.html` | 끝이 `/`인 경로에 제공할 파일. 빈 값이면 끔 |
+| `SPA_INDEX` | `/index.html` | SPA fallback 대상 |
+| `SPA_ALLOW_DOTTED_ROUTES` | `false` | 점이 포함된 경로도 SPA 탐색으로 볼지 |
+| `ERROR_PAGE_404` | 없음 | 404에 제공할 저장소 HTML 경로 |
+| `ERROR_PAGES_JSON` | `{}` | `{"500":"/500.html"}` 형태. 같은 상태면 `ERROR_PAGE_404`보다 우선 |
+| `LISTEN_ADDR` | `:8080` | `BROWSER_LISTEN_ADDR`의 별칭. 둘을 다르게 쓰면 시작 오류 |
+| `HEALTH_PATH` | `/_mori/healthz` | 빈 값이면 HTTP 상태 검사를 끕니다 |
+| `ACCESS_LOG` | `true` | 쿼리·자격 증명을 제외한 접근 로그 |
+| `SHUTDOWN_TIMEOUT` | `30s` | SIGTERM 후 진행 중 전송을 기다리는 시간 |
+
+크기는 `KB`/`KiB`/`MB`/`MiB`/`GB`/`GiB`, 기간은 Go 형식(`30s`, `15m`, `168h`)에 `d`를 더해 씁니다. 잘못된 값·음수·블록 배수 위반은 조용히 무시하지 않고 시작 시 오류로 알립니다. 전체 목록과 주석은 [.env.example](.env.example)에 있습니다.
+
+100 GiB 제한으로 200 GiB 파일을 읽을 때 파일 전체를 먼저 저장하지 않습니다. 새 블록은 probation에 두고 재사용 블록의 protected 예산을 80%로 유지해 대형 순차 읽기로 인한 캐시 교체를 줄입니다. **기존 probation까지 모두 보존하거나 protected를 영구 고정하는 것은 아닙니다.** read-ahead는 제한된 배치이며 현재 배치를 다 소비한 다음 배치를 가져옵니다. 전체 RSS·파일시스템 quota·다운로드 속도를 보장하는 설정은 아닙니다.
+
+`CACHE_MODE=off`는 본문 캐시를 끄고 디스크를 열지 않습니다. 일반 실행의 `CACHE_DIR` 기본은 ./cache, Docker는 /cache입니다. `CACHE_MAX_DISK_SIZE=0`은 무제한이므로 실제 제한이 필요하면 양수를 지정하세요. 재시작 시 디스크를 복구하고 메타데이터를 재검증합니다. 같은 캐시 namespace를 여러 프로세스가 동시에 공유하지 마세요.
+
+외부 캐시 서버를 앞단에 두는 구성은 지원하지 않습니다. 캐시를 끄려면 `CACHE_MODE=off`를 사용하세요.
 
 ### Docker 없이 실행
 
@@ -43,7 +113,7 @@ make assets     # Python, 빌드용 정적 파일 수집
 make run        # 또는 make build -> bin/mori
 ```
 
-`.env`를 읽으며 프로세스 환경변수가 우선합니다. Go 요구사항은 `go.mod`를 따릅니다. Docker 전체 빌드/기동은 이번 환경에서 검증하지 않았습니다. 테스트용 의존성은 `tests/requirements.txt`에 있고 서버 실행에는 필요하지 않습니다.
+`.env`를 읽으며 프로세스 환경변수가 우선합니다. Go 요구사항은 `go.mod`를 따릅니다. 테스트용 의존성은 `tests/requirements.txt`에 있고 서버 실행에는 필요하지 않습니다.
 
 최소 설정:
 
@@ -75,9 +145,9 @@ BROWSER_PUBLIC=false
 | Range·HEAD·조건부 요청 | O | O | O | O |
 | 재귀 ZIP (`BROWSER_ZIP_ENABLED`로 끌 수 있음) | O | O | O | O |
 | `presigned` 전달 | O | X | X | X |
-| `BROWSER_PROXY_URL` 캐시 | O | X | X | X |
+| 내장 객체 캐시 | O | O | O | O |
 
-**S3가 아닌 백엔드는 항상 mori를 거쳐 전달합니다.** `BROWSER_DOWNLOAD_MODE`나 `BROWSER_PREVIEW_MODE`를 `presigned`로 두거나 `BROWSER_PROXY_URL`을 지정하면 시작 단계에서 오류로 멈춥니다. `/api/config`는 `backend` 값과 실제 적용된 `proxy` 모드를 알려 줍니다.
+**S3가 아닌 백엔드는 항상 mori를 거쳐 전달합니다.** `BROWSER_DOWNLOAD_MODE`나 `BROWSER_PREVIEW_MODE`를 `presigned`로 두면 시작 단계에서 오류로 멈춥니다. `/_mori/api/config`는 `backend` 값과 실제 적용된 `proxy` 모드를 알려 줍니다.
 
 ```dotenv
 # WebDAV
@@ -97,17 +167,19 @@ FTP_PATH=/pub
 STORAGE_BACKEND=sftp
 SFTP_ADDR=sftp.example.com
 SFTP_USERNAME=reader
-SFTP_KEY_FILE=/run/secrets/id_ed25519
-SFTP_KNOWN_HOSTS=/run/secrets/known_hosts
+SFTP_KEY="-----BEGIN OPENSSH PRIVATE KEY-----\nBASE64_PRIVATE_KEY_BODY\n-----END OPENSSH PRIVATE KEY-----"
+SFTP_HOST_KEY='ssh-ed25519 BASE64_SERVER_PUBLIC_KEY sftp.example.com'
 SFTP_PATH=/srv/files
 ```
+
+SFTP 예시의 `BASE64_…`는 실제 키로 교체하는 자리 표시자입니다. `SFTP_KEY`는 실제 개행 또는 `\n`을 포함한 개인 키 본문이며 `.env`에서는 위처럼 한 줄로 작성합니다. 파일 입력은 `SFTP_KEY_FILE=/run/secrets/id_ed25519`도 지원합니다. 암호화된 개인 키는 `SFTP_KEY_PASSPHRASE`를 추가하세요. ENV와 파일을 동시에 지정하면 시작 오류입니다. 서버 검증은 `SFTP_HOST_KEY`에 `ssh-ed25519 …` 형식의 서버 공개 키 한 개를 지정하거나 `SFTP_KNOWN_HOSTS` 파일을 사용합니다. 개인 키·지문 문자열·known_hosts 전체 행은 `SFTP_HOST_KEY` 형식이 아닙니다. 신뢰할 수 있는 관리자 경로로 서버 키를 확인하고, 키 불일치 시 검증을 끄지 말고 변경 이유를 확인하세요. ENV는 배포 도구의 설정 조회에 노출될 수 있으므로 `.env`를 커밋하지 말고 접근 권한을 제한하세요.
 
 백엔드별 동작과 제한:
 
 - **파일 변경 확인.** S3는 ETag를 씁니다. WebDAV는 서버의 강한 ETag가 있으면 쓰고, 없으면 크기와 수정 시각으로 만듭니다. FTP·SFTP는 크기와 수정 시각으로 만듭니다. ZIP 도중 파일이 바뀌면 크기·시각 비교와 전송 길이 검사로 중단합니다. 다만 FTP `LIST`는 보통 분 단위 시각만 주므로, 같은 분 안에 크기를 유지한 채 바뀐 파일은 감지하지 못합니다.
 - **WebDAV**는 `PROPFIND`(Depth 0/1)와 Range GET을 씁니다. Basic 인증만 지원하며 다른 호스트를 가리키는 href는 무시합니다.
 - **FTP**는 로그인된 연결을 최대 4개까지 재사용합니다. 목록 조회는 서버가 지원하면 MLSD, 아니면 LIST를 씁니다. 심볼릭 링크는 목록에서 뺍니다. 없는 폴더를 빈 목록으로 답하는 서버(vsftpd 등)에서도 404를 돌려주도록 상위 폴더를 확인합니다.
-- **SFTP**는 SSH 연결 하나를 모든 요청이 공유하고, 끊기면 다음 요청에서 다시 연결합니다. **호스트 키 검증이 기본**이며 `SFTP_KNOWN_HOSTS`가 필요합니다. 파일을 가리키는 심볼릭 링크는 따라가고, 폴더 링크는 순환을 막기 위해 목록에서 뺍니다.
+- **SFTP**는 SSH 연결 하나를 모든 요청이 공유하고, 끊기면 다음 요청에서 다시 연결합니다. **호스트 키 검증이 기본**이며 `SFTP_HOST_KEY`(서버 공개 키 본문) 또는 `SFTP_KNOWN_HOSTS`(파일 경로)가 필요합니다. 파일을 가리키는 심볼릭 링크는 따라가고, 폴더 링크는 순환을 막기 위해 목록에서 뺍니다.
 - **목록 페이지.** WebDAV·FTP·SFTP는 폴더 하나를 한 번에 조회합니다. 항목이 매우 많은 폴더는 S3보다 느릴 수 있습니다. 재귀 ZIP은 하위 폴더 10,000개에서 멈춥니다.
 - 비밀번호와 키는 로그나 API 응답에 넣지 않습니다. 접근 거부 시 서버 로그에는 백엔드 이름과 오류 코드만 남깁니다.
 
@@ -119,10 +191,10 @@ SFTP_PATH=/srv/files
 STORAGE_BASE_PATH=team/reports
 ```
 
-- **화면의 최상위 폴더가 이 경로가 됩니다.** 목록·다운로드·미리보기·ZIP의 경로와 `/api/config` 응답에는 base path가 나타나지 않습니다. ZIP 내부 경로도 이 폴더 기준입니다.
+- **화면의 최상위 폴더가 이 경로가 됩니다.** 목록·다운로드·미리보기·ZIP의 경로와 `/_mori/api/config` 응답에는 base path가 나타나지 않습니다. ZIP 내부 경로도 이 폴더 기준입니다.
 - **위로 벗어날 수 없습니다.** `..`, `.`, `//`, 역슬래시, 제어 문자가 들어간 키와 base path는 거부합니다. base path 밖의 파일은 같은 이름으로 요청해도 base path 안에서 찾기 때문에 404가 됩니다.
 - **각 백엔드의 기존 루트 안쪽에 적용됩니다.** S3는 `S3_PREFIX` 뒤에, WebDAV는 `WEBDAV_URL` 경로 뒤에, FTP·SFTP는 `FTP_PATH`·`SFTP_PATH` 아래에 붙습니다. 앞뒤 `/`는 있어도 없어도 됩니다.
-- **S3 캐시 프록시와 함께 쓸 수 있습니다.** s3-proxy는 `S3_PREFIX`를 스스로 붙이므로 mori는 프록시에 base path만 붙여 보냅니다. `S3_PREFIX`와 합친 길이는 512바이트까지입니다.
+- **S3에서는 `S3_PREFIX` 뒤에 이어 붙입니다.** 둘을 합친 길이는 512바이트까지입니다.
 - **없는 경로를 지정하면** WebDAV·FTP·SFTP는 최상위 목록에서 404를 돌려줍니다. S3는 폴더 객체가 없어도 prefix가 성립하므로 빈 목록이 됩니다.
 - 저장소 서버의 심볼릭 링크는 제한하지 않습니다. 예를 들어 SFTP에서 base path 안의 링크가 밖의 파일을 가리키면 그 파일을 보여 줍니다. 숨기려는 파일을 가리키는 링크가 없는지 확인하세요.
 
@@ -143,12 +215,12 @@ BROWSER_PRESIGN_TTL=15m
 ### proxy
 
 ```text
-S3 → [선택: s3-proxy 캐시] → mori → 사용자
+저장소 → mori 내장 세그먼트 캐시 → 사용자
 ```
 
-mori가 파일을 스트리밍합니다. `BROWSER_PROXY_URL`을 지정하면 객체 본문을 외부 프록시에서 받고, 비우면 S3에서 직접 받아 전달합니다. **URL을 비워도 사용자가 S3에 직접 접속하는 것이 아니라 mori를 거칩니다.** Compose는 외부 프록시를 실행하지 않습니다.
+mori가 저장소 파일을 내장 캐시를 거쳐 스트리밍합니다. `CACHE_MODE=off`이면 본문 캐시 없이 중계합니다. `proxy`는 mori 경유 전달을 뜻하며 외부 객체 프록시가 아닙니다.
 
-개별 파일의 GET/HEAD, Range와 조건부 요청을 전달합니다. 파일 전체를 RAM이나 완성 임시 파일로 모으지 않습니다. 프록시 사용 시 실제 캐시 디스크/세그먼트 버퍼는 별도 프록시가 사용합니다.
+개별 파일의 GET/HEAD, Range와 조건부 요청을 전달합니다. 파일 전체를 RAM이나 완성 임시 파일로 모으지 않습니다. 내장 캐시는 제한된 세그먼트 버퍼와 디스크를 사용합니다.
 
 ### presigned
 
@@ -158,7 +230,7 @@ mori가 파일을 스트리밍합니다. `BROWSER_PROXY_URL`을 지정하면 객
 사용자 → mori에서 인증·키 범위 확인 → HTTP 307 → S3 → 사용자
 ```
 
-개별 다운로드/원본 열기에서는 mori가 SigV4 서명 URL로 리다이렉트하고, 내장 미리보기에서는 `/api/preview`가 GET 서명 URL을 JSON으로 발급합니다. 어느 쪽도 mori가 객체 본문을 받지 않습니다. 이 경로는 **mori와 객체 캐시를 우회**합니다. 링크를 누를 때 새 URL이 발급되며, URL 전체를 사전에 목록에 넣거나 저장하지 않습니다. GET에는 서명된 Content-Type/Content-Disposition 응답 재정의를 붙여 다운로드/미리보기 목적을 유지합니다. **GetObject(GET)만 presign합니다.** HEAD 요청은 설정과 관계없이 서버 측 객체 경로로 처리합니다. ListObjectsV2, 버킷 조회, ZIP, 업로드/삭제를 presign하는 경로는 없습니다. 목록은 서버에서 S3로 요청합니다. GET presigned URL에 HEAD를 보내는 방식도 사용하지 않습니다.
+개별 다운로드/원본 열기에서는 mori가 SigV4 서명 URL로 리다이렉트하고, 내장 미리보기에서는 `/_mori/api/preview`가 GET 서명 URL을 JSON으로 발급합니다. 어느 쪽도 mori가 객체 본문을 받지 않습니다. 이 경로는 **mori와 객체 캐시를 우회**합니다. 링크를 누를 때 새 URL이 발급되며, URL 전체를 사전에 목록에 넣거나 저장하지 않습니다. GET에는 서명된 Content-Type/Content-Disposition 응답 재정의를 붙여 다운로드/미리보기 목적을 유지합니다. **GetObject(GET)만 presign합니다.** HEAD 요청은 설정과 관계없이 서버 측 객체 경로로 처리합니다. ListObjectsV2, 버킷 조회, ZIP, 업로드/삭제를 presign하는 경로는 없습니다. 목록은 서버에서 S3로 요청합니다. GET presigned URL에 HEAD를 보내는 방식도 사용하지 않습니다.
 
 `BROWSER_PRESIGN_TTL`은 기본 15분이며 1초 이상 7일 이하의 정수 초입니다. STS 세션 토큰을 사용하면 세션이 먼저 끝날 경우 URL도 그보다 오래 유효하지 않습니다. IAM 역할 자격 증명의 자동 탐색/갱신은 구현하지 않았으며 ENV의 키와 선택적 세션 토큰을 사용합니다.
 
@@ -183,7 +255,7 @@ ZIP 다운로드는 기본으로 켜져 있으며 ENV로 끌 수 있습니다.
 BROWSER_ZIP_ENABLED=false
 ```
 
-끄면 목록의 선택 체크박스와 `ZIP 다운로드` 버튼이 사라지고, `/api/archive`는 POST·GET 모두 `404 zip_disabled`를 돌려줍니다. 저장소에는 요청을 보내지 않습니다. 개별 파일 다운로드와 미리보기는 그대로 동작합니다. `/api/config`의 `zipEnabled`가 현재 상태를 알려 줍니다. 아래 설명은 ZIP이 켜져 있을 때 해당합니다.
+끄면 목록의 선택 체크박스와 `ZIP 다운로드` 버튼이 사라지고, `/_mori/api/archive`는 POST·GET 모두 `404 zip_disabled`를 돌려줍니다. 저장소에는 요청을 보내지 않습니다. 개별 파일 다운로드와 미리보기는 그대로 동작합니다. `/_mori/api/config`의 `zipEnabled`가 현재 상태를 알려 줍니다. 아래 설명은 ZIP이 켜져 있을 때 해당합니다.
 
 파일 또는 폴더를 체크하면 상단에 `ZIP 다운로드 (N)` 버튼이 나타납니다. N은 선택한 최상위 항목 수이며 폴더 안의 실제 파일 수는 준비 요청 후 서버에서 확인합니다. 전체 선택은 **현재 폴더에서 이미 불러온 파일·폴더 항목**을 선택합니다. 아직 읽지 않은 현재 폴더의 다음 페이지는 선택하지 않지만, **선택한 폴더 안의 하위 파일은 UI에서 열어보지 않았어도 모든 페이지를 순회해 포함**합니다. 상위 폴더 이동용 `..`는 선택하지 않습니다. 더 불러오기와 정렬은 선택을 유지하고, 폴더 이동이나 새로고침은 선택을 초기화합니다. 파일 개수 제한보다 목록이 많으면 전체 선택을 거부하고 개별 선택하도록 안내합니다.
 
@@ -197,11 +269,11 @@ BROWSER_ZIP_CONCURRENCY=2
 
 ZIP은 `archive/zip`의 **Store(무압축)** 방식입니다. 완성 ZIP을 서버 디스크나 RAM에 만들지 않고 객체를 한 개씩 읽어 응답에 씁니다. 압축 CPU 연산은 없지만 CRC32 계산, 데이터 복사, 네트워크 전송, 사용하는 경우 객체 캐시 I/O는 남습니다. 버퍼와 ZIP 목차 메타데이터를 사용하므로 메모리가 0인 것은 아닙니다.
 
-**ZIP은 두 개별 파일 모드 설정과 관계없이 항상 서버 경유**입니다. 본문은 `BROWSER_PROXY_URL`이 비어 있으면 S3에서 직접 읽고, 설정되어 있으면 해당 캐시 경로를 사용합니다. 별도 캐시가 없어도 ZIP은 동작합니다. 선택 파일을 모아 새 ZIP을 S3에 업로드하거나 그 ZIP의 presigned URL을 만드는 구현은 아닙니다.
+**ZIP은 두 개별 파일 모드 설정과 관계없이 항상 서버 경유**입니다. 본문은 내장 캐시를 공유하며, off에서는 저장소에서 직접 읽습니다. ZIP 계획과 전송 시작 시 원본을 재검증하며 stale 캐시로 대체하지 않습니다. 선택 파일을 모아 새 ZIP을 S3에 업로드하거나 그 ZIP의 presigned URL을 만드는 구현은 아닙니다.
 
 ### 준비 / 전송
 
-1. UI는 `POST /api/archive`에 `{ "prefix": "docs/", "keys": ["docs/a.txt", "docs/photos/"] }`만 보냅니다. `/`로 끝나는 선택 키는 폴더입니다. 같은 origin의 JSON 요청과 `X-Mori-Request: 1` 헤더를 요구합니다.
+1. UI는 `POST /_mori/api/archive`에 `{ "prefix": "docs/", "keys": ["docs/a.txt", "docs/photos/"] }`만 보냅니다. `/`로 끝나는 선택 키는 폴더입니다. 같은 origin의 JSON 요청과 `X-Mori-Request: 1` 헤더를 요구합니다.
 2. 서버가 현재 폴더의 직접 자식만 선택했는지와 키 범위/중복을 검사합니다. 직접 선택한 파일은 원본 S3 HEAD로 크기·ETag를 확인합니다. 선택 폴더는 **그 prefix만 지정하고 delimiter 없이 ListObjectsV2의 모든 페이지를 순회**합니다. 재귀 파일의 크기·ETag는 이 새 LIST 응답을 사용하므로 파일마다 추가 HEAD를 보내지 않습니다. UI가 보낸 크기와 기존 목록 캐시는 신뢰하지 않습니다. 준비 전체는 60초 제한이며 객체 본문은 받지 않습니다. 타임아웃·원본 오류·한도 초과이면 일회용 URL을 발급하지 않습니다.
 3. 2분 동안 유효한 일회용 다운로드 URL을 반환합니다. 브라우저는 해당 URL을 일반 다운로드 링크로 열어 ZIP을 받습니다. JavaScript가 ZIP 전체를 Blob으로 모으지 않습니다.
 
@@ -223,7 +295,7 @@ files.zip (현재 폴더가 docs/이면 docs.zip)
 
 ### 변경 / 중단 / 이어받기
 
-ZIP 전송은 HEAD 또는 재귀 LIST에서 확인한 ETag로 If-Match를 보내고 GET 응답 ETag와 길이도 확인합니다. 파일 변경이나 원본 실패가 응답 시작 전이면 오류를 반환하고, 시작 후이면 연결을 중단합니다. 일부 파일만 든 ZIP을 성공한 것처럼 완성하지 않습니다. 캐시 프록시가 오래된 내용을 반환하는 경우에도 ETag가 다르면 실패합니다.
+ZIP 전송은 HEAD/Stat 또는 재귀 LIST에서 확인한 ETag와 크기를 비교합니다. S3 및 strong ETag가 있는 WebDAV는 원본 If-Match로도 확인하고, FTP/SFTP와 weak ETag의 WebDAV는 읽기 전후 메타데이터와 실제 길이를 검사합니다. 동일 크기·수정시각 덮어쓰기를 감지하는 내용 해시나 원자적 스냅샷은 아닙니다. 감지된 파일 변경이나 원본 실패가 응답 시작 전이면 오류를 반환하고, 시작 후이면 연결을 중단합니다. 일부 파일만 든 ZIP을 성공한 것처럼 완성하지 않습니다. 캐시의 ETag가 계획과 달라도 실패합니다.
 
 S3의 여러 페이지 목록 조회와 파일 다운로드를 하나의 원자적 스냅샷으로 만들지는 않습니다. 준비 도중 추가된 파일이 모두 포함된다고 보장하지 않으며, 준비한 파일이 이후 변경/삭제되면 오류로 처리합니다. 클라이언트 연결 종료는 재귀 LIST와 진행 중 S3/프록시 요청에 전파합니다. 동적 ZIP에는 완성본과 고정 Content-Length가 없으며 **Range 이어받기는 지원하지 않습니다**. 중단/실패하면 다시 선택해 새 ZIP을 요청해야 합니다. 전체 백분율 표시도 브라우저에 따라 제한됩니다.
 
@@ -239,9 +311,9 @@ S3의 여러 페이지 목록 조회와 파일 다운로드를 하나의 원자�
 
 ## 운영
 
-Compose는 기본적으로 브라우저 포트를 127.0.0.1에만 바인딩합니다. 외부 제공 시 HTTPS와 인증을 유지하세요. 캐시 프록시에는 브라우저 인증이 없으므로 내부 포트를 외부에 공개하지 마세요. S3 비공개 버킷이어도 `BROWSER_PUBLIC=true`면 mori가 그 범위를 사용자에게 제공할 수 있습니다.
+기본 상태 검사 주소는 `/_mori/healthz`이며 `HEALTH_PATH`로 변경하거나 빈 값으로 끕니다. `mori healthcheck`와 Docker probe도 이 설정을 따릅니다. 기존 `/healthz`가 필요하면 명시하세요. `ACCESS_LOG`는 쿼리·자격 증명을 제외한 접근 로그를 제어합니다.
 
-외부 프록시를 사용하는 경우 두 서비스의 버킷과 prefix를 일치시켜야 합니다. 캐시 ENV는 해당 프록시 환경에서 설정합니다. 디렉터리 인덱스, SPA fallback, 커스텀 오류 페이지는 없는 객체가 정상 HTML로 대체되지 않도록 외부 프록시에서 꺼야 합니다.
+Compose는 기본적으로 브라우저 포트를 127.0.0.1에만 바인딩합니다. 외부 제공 시 HTTPS와 인증을 유지하세요. 내장 캐시의 HIT도 mori 인증을 거칩니다. S3 비공개 버킷이어도 `BROWSER_PUBLIC=true`면 mori가 그 범위를 사용자에게 제공할 수 있습니다.
 
 새 소스를 적용한 뒤 `docker compose up --build -d`로 재빌드하세요. ENV만 바꾸었다면 `docker compose up -d --force-recreate`로 반영합니다. 직접 실행 중이면 프로세스를 재시작하세요.
 
@@ -255,6 +327,7 @@ internal/backend/  저장소 인터페이스(List·Walk·Stat·Open)와 공통 �
 internal/media/    확장자 기반 MIME·미리보기 종류·안전한 Content-Type/Disposition
 internal/s3/       SigV4 서명, 한 단계 목록, 객체 GET/HEAD, presign, ZIP용 재귀 순회
 internal/cache/    목록용 TTL 캐시 (동시 요청 합치기)
+internal/objectcache/  본문 디스크 캐시: 세그먼트·보호 LRU·fill 공유·사이트 라우팅
 internal/server/   인증·보안 헤더, JSON API, 객체 전달(S3 통과/범용), ZIP 준비/스트리밍, 정적 파일
 web/               브라우저 UI. embed.go가 바이너리에 임베드 (vendor/는 빌드 시 생성)
 tools/vendor.py    Media Chrome / PDF.js 수집 스크립트
@@ -262,29 +335,20 @@ tests/             Python 통합·UI 검사와 서명 fixture
 docs/              설정·검증 문서
 ```
 
-`internal/` 아래는 외부에서 import할 수 없는 구현 패키지입니다. `server`는 `backend.Backend` 인터페이스로 모든 저장소를 다룹니다. S3일 때만 presign과 캐시 프록시 통과 경로를 추가로 씁니다. 새 백엔드는 `internal/backend/` 아래에 네 메서드를 구현하고 `cmd/mori`와 `internal/config`에 연결하면 됩니다.
+`internal/` 아래는 외부에서 import할 수 없는 구현 패키지입니다. `server`는 `backend.Backend` 인터페이스로 모든 저장소를 다룹니다. S3일 때만 presign 경로를 추가로 씁니다. 새 백엔드는 `internal/backend/` 아래에 네 메서드를 구현하고 `cmd/mori`와 `internal/config`에 연결하면 됩니다.
 
 ## 테스트
 
 ```sh
-go test -race -cover ./...
-go vet ./...
-node --check web/app.js
-node --check web/preview.js
-python3 -m unittest discover -s tests -p "vendor_test.py" -v
-
-# 테스트 전용 의존성. Go 서버의 실행 의존성이 아닙니다.
-python3 tests/preview_dom.py    # 테스트용 응답/PDF 대역으로 UI 수명주기·모바일 검사
-python3 tests/ui_smoke.py       # Playwright + Chromium, DOM/모의 fetch 검사
-python3 tests/http_smoke.py     # botocore, 실제 바이너리 + 모의 S3 HTTP 검사
-python3 tests/compose_smoke.py  # PyYAML 구조 검사; Docker 실행 검사가 아님
-tests/backends_e2e.sh           # Docker로 Apache WebDAV·vsftpd·OpenSSH를 띄워 실제 바이너리 검사
-python3 tests/http_e2e.py       # 실제 브라우저 HTTP 목록/ZIP/텍스트 검사
-make assets
-python3 tests/preview_e2e.py    # 실제 Media Chrome/PDF.js + HTTP
+make test          # Go/race/vet, 도구 단위, HTTP/Compose 통합
+make test-ui       # 모의 UI/DOM
+make test-e2e      # 실제 브라우저 HTTP, Chromium/WebKit 뷰어
+make test-backends # Docker WebDAV·FTP·SFTP
+make test-docker   # 이미지 빌드·캐시·재시작
+# 전체: make test-all
 ```
 
-`tests/http_e2e.py`는 이번 환경의 브라우저 로컬 URL 정책으로 완료하지 못했습니다. 대신 UI 검사와 바이너리 HTTP 통합 검사를 분리해 실행했습니다. 새 재귀 ZIP은 하위 1,005개 파일의 2페이지 조회·완성 ZIP 검사를 포함합니다. 실제 AWS/MinIO/R2와 Docker 전체 기동, 대용량 ZIP64/부하 시험은 미검증입니다. 완료한 검사와 범위는 `docs/VERIFICATION.md`를 참고하세요. 테스트용 데이터는 테스트 코드에서만 생성하며 실행 바이너리에 샘플 파일을 넣지 않습니다.
+Go 패키지 테스트는 코드 옆에 유지하고, 외부 통합/E2E·UI·공유 fixture는 `tests/` 하위에 분류했습니다. 준비와 개별 실행법은 [테스트 안내](tests/README.md), 완료한 검사와 운영 환경에서 남은 범위는 [검증 문서](docs/VERIFICATION.md)를 참고하세요. 테스트용 데이터는 테스트에서만 생성하며 실행 바이너리에 샘플 파일을 넣지 않습니다.
 
 ## 공식 문서 / 출처
 

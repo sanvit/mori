@@ -36,6 +36,6 @@ https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-prefixes.html
 
 ## 단독 실행과 선택 캐시
 
-기본 `compose.yaml`은 mori 서비스 하나뿐이며 `BROWSER_PROXY_URL`의 기본값은 빈 값입니다. 외부 캐시 서버 없이 S3에서 직접 메타데이터와 객체 본문을 읽을 수 있습니다. `proxy` 모드에서는 본문이 S3 → mori → 브라우저로 이동하고, `presigned`의 개별 GetObject는 브라우저가 S3에서 받습니다. ZIP은 어떤 모드에서도 mori가 직접 묶어 스트리밍합니다.
+기본 `compose.yaml`은 mori 서비스 하나뿐이며 객체 캐시는 내장되어 있습니다. 외부 캐시 서버 없이 S3에서 직접 메타데이터와 객체 본문을 읽을 수 있습니다. `proxy` 모드에서는 본문이 S3 → mori → 브라우저로 이동하고, `presigned`의 개별 GetObject는 브라우저가 S3에서 받습니다. ZIP은 어떤 모드에서도 mori가 직접 묶어 스트리밍합니다.
 
-파일 목록 TTL 메모리 캐시는 mori 내부에 있습니다. 파일 본문 디스크/세그먼트 캐시는 내장하지 않았습니다. 이미 운영 중인 S3 객체 프록시는 `BROWSER_PROXY_URL`로 연결할 수 있으며 캐시 설정은 해당 서비스에서 관리합니다. Compose는 mori 하나만 실행합니다.
+파일 목록 TTL 메모리 캐시와 파일 본문 디스크/세그먼트 캐시 모두 mori 내부에 있습니다. 기본 `CACHE_MODE=internal`은 browser/spa/direct 모두에 적용되며 S3·WebDAV·FTP/FTPS·SFTP가 공유 구현을 사용합니다. browser 파일 응답의 `private, no-store`는 사용자 브라우저와 중간 프록시의 보관 정책일 뿐 내부 디스크 캐시를 끄지 않습니다. ZIP 구성 파일도 같은 캐시에서 읽지만 완성 ZIP 자체는 보관하지 않습니다. `presigned` GET은 저장소로 직접 연결하므로 mori 캐시를 우회합니다. Compose는 mori 하나만 실행합니다.

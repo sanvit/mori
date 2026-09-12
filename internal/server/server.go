@@ -4,8 +4,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,17 +17,20 @@ import (
 	"mori/internal/backend"
 	"mori/internal/cache"
 	"mori/internal/config"
+	"mori/internal/objectcache"
 	"mori/internal/s3"
 )
 
 type App struct {
-	cfg      config.Config
-	store    backend.Backend
-	s3       *s3.Origin // non-nil only for the S3 backend: proxy passthrough and presigning
-	cache    *cache.Cache[backend.Listing]
-	slots    chan struct{}
-	zipSlots chan struct{}
-	archives *archiveStore
+	objects            *objectcache.Proxy
+	objectCacheEnabled bool
+	cfg                config.Config
+	store              backend.Backend
+	s3                 *s3.Origin // non-nil only for the S3 backend: proxy passthrough and presigning
+	cache              *cache.Cache[backend.Listing]
+	slots              chan struct{}
+	zipSlots           chan struct{}
+	archives           *archiveStore
 }
 
 // New builds an S3-backed handler. Other backends use NewWithBackend.
@@ -52,6 +53,9 @@ func NewWithBackend(c config.Config, store backend.Backend) *App {
 
 // withDefaults fills zero-valued limits so hand-built configs behave like config.Read.
 func withDefaults(c config.Config) config.Config {
+	if c.ServeMode == "" {
+		c.ServeMode = "browser"
+	}
 	if c.ZipMaxFiles == 0 {
 		c.ZipMaxFiles = 200
 	}
@@ -76,42 +80,31 @@ func withDefaults(c config.Config) config.Config {
 	return c
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	a.serve(w, r)
+}
+
+func (a *App) serveBrowser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 	w.Header().Set("Content-Security-Policy", a.contentSecurityPolicy())
 	w.Header().Set("Cache-Control", "private, no-store")
-	if r.Method != "GET" && r.Method != "HEAD" && !(r.Method == "POST" && r.URL.Path == "/api/archive") {
+	if r.Method != "GET" && r.Method != "HEAD" && !(r.Method == "POST" && r.URL.Path == "/_mori/api/archive") {
 		w.Header().Set("Allow", "GET, HEAD")
 		fail(w, 405, "method_not_allowed", "읽기 전용 브라우저입니다.")
 		return
 	}
-	if r.URL.Path == "/healthz" {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		io.WriteString(w, "ok\n")
-		return
-	}
-	if a.cfg.Username != "" {
-		u, p, ok := r.BasicAuth()
-		uh, ph := sha256.Sum256([]byte(u)), sha256.Sum256([]byte(p))
-		wantU, wantP := sha256.Sum256([]byte(a.cfg.Username)), sha256.Sum256([]byte(a.cfg.Password))
-		if !ok || subtle.ConstantTimeCompare(uh[:], wantU[:])&subtle.ConstantTimeCompare(ph[:], wantP[:]) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="mori", charset="UTF-8"`)
-			fail(w, 401, "unauthorized", "로그인이 필요합니다.")
-			return
-		}
-	}
 	switch r.URL.Path {
-	case "/api/config":
+	case "/_mori/api/config":
 		a.config(w, r)
-	case "/api/list":
+	case "/_mori/api/list":
 		a.withSlot(w, r, a.list)
-	case "/api/preview":
+	case "/_mori/api/preview":
 		a.withSlot(w, r, a.preview)
-	case "/api/object":
+	case "/_mori/api/object":
 		a.withSlot(w, r, a.object)
-	case "/api/archive":
+	case "/_mori/api/archive":
 		if a.cfg.ZipDisabled {
 			fail(w, 404, "zip_disabled", "이 서버에서는 ZIP 다운로드를 사용하지 않습니다.")
 			return
@@ -122,10 +115,10 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.withSlot(w, r, a.archive)
-	case "/", "/index.html", "/app.js", "/styles.css", "/preview.js", "/preview.css", "/favicon.svg":
+	case "/", "/_mori/assets/app.js", "/_mori/assets/styles.css", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/favicon.svg":
 		a.static(w, r)
 	default:
-		if strings.HasPrefix(r.URL.Path, "/vendor/") {
+		if strings.HasPrefix(r.URL.Path, "/_mori/vendor/") {
 			a.static(w, r)
 		} else {
 			fail(w, 404, "not_found", "페이지를 찾을 수 없습니다.")
@@ -152,12 +145,11 @@ func fail(w http.ResponseWriter, status int, code, message string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": code, "message": message})
 }
 func (a *App) config(w http.ResponseWriter, r *http.Request) {
+	// Preserve the standalone API marker; cacheMode reports internal/off,
+	// while downloadMode/previewMode report proxy/presigned delivery.
 	mode := "direct"
-	if a.cfg.Proxy != nil {
-		mode = "proxy"
-	}
 	jsonOut(w, map[string]any{"title": a.cfg.Title, "backend": a.cfg.Backend, "mode": mode, "downloadMode": a.cfg.DownloadMode,
-		"previewMode": a.cfg.PreviewMode, "zipEnabled": !a.cfg.ZipDisabled, "zipMaxFiles": a.cfg.ZipMaxFiles, "zipMaxBytes": a.cfg.ZipMaxBytes})
+		"serveMode": a.cfg.ServeMode, "cacheMode": a.cfg.CacheMode, "previewMode": a.cfg.PreviewMode, "zipEnabled": !a.cfg.ZipDisabled, "zipMaxFiles": a.cfg.ZipMaxFiles, "zipMaxBytes": a.cfg.ZipMaxBytes})
 }
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
 	prefix, cursor := r.URL.Query().Get("prefix"), r.URL.Query().Get("cursor")
@@ -247,6 +239,10 @@ func (a *App) object(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTemporaryRedirect)
 		return
 	}
+	if a.objectCacheEnabled {
+		a.cachedObject(w, r, key, download)
+		return
+	}
 	if a.s3 == nil {
 		a.serveObject(w, r, key, download)
 		return
@@ -270,9 +266,7 @@ func (a *App) object(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(h, v)
 		}
 	}
-	if !a.s3.UsesProxy(key) {
-		w.Header().Set("X-Cache", "BYPASS")
-	}
+	w.Header().Set("X-Cache", "BYPASS")
 	w.WriteHeader(resp.StatusCode)
 	if r.Method != "HEAD" && resp.StatusCode != 304 {
 		if _, e = io.Copy(w, resp.Body); e != nil {
@@ -302,17 +296,17 @@ func (a *App) serveObject(w http.ResponseWriter, r *http.Request, key string, do
 	if !st.Modified.IsZero() {
 		h.Set("Last-Modified", st.Modified.UTC().Format(http.TimeFormat))
 	}
-	if m := r.Header.Get("If-Match"); m != "" && m != "*" && !etagMatches(m, st.ETag) {
+	if m := r.Header.Get("If-Match"); m != "" && !strongETagMatches(m, st.ETag) {
 		a.upstreamFail(w, &backend.UpstreamError{Status: 412, Code: "PreconditionFailed"})
 		return
 	}
-	if m := r.Header.Get("If-None-Match"); m != "" && (m == "*" || etagMatches(m, st.ETag)) {
+	if m := r.Header.Get("If-None-Match"); m != "" && (m == "*" || (etagMatches(m, st.ETag) && !(backend.SyntheticETag(st.ETag) && st.Modified.IsZero()))) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	offset, length, status := int64(0), st.Size, http.StatusOK
 	if rng := r.Header.Get("Range"); rng != "" {
-		if ir := r.Header.Get("If-Range"); ir == "" || ir == st.ETag {
+		if ir := r.Header.Get("If-Range"); ir == "" || (backend.StrongETag(ir) && ir == st.ETag) {
 			start, end, ok := parseRange(rng, st.Size)
 			if !ok {
 				h.Set("Content-Range", fmt.Sprintf("bytes */%d", st.Size))
@@ -381,7 +375,17 @@ func parseRange(spec string, size int64) (start, end int64, ok bool) {
 	return start, end, true
 }
 
-// etagMatches implements weak comparison of an If-Match/If-None-Match list.
+func strongETagMatches(list, etag string) bool {
+	for _, tag := range strings.Split(list, ",") {
+		tag = strings.TrimSpace(tag)
+		if tag == "*" || (backend.StrongETag(tag) && backend.StrongETag(etag) && tag == etag) {
+			return true
+		}
+	}
+	return false
+}
+
+// etagMatches implements weak comparison of an If-None-Match list.
 func etagMatches(list, etag string) bool {
 	if etag == "" {
 		return false

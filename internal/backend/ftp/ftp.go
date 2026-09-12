@@ -173,7 +173,7 @@ func (c *Client) List(ctx context.Context, prefix, cursor string) (backend.Listi
 			l.Entries = append(l.Entries, backend.Entry{Key: prefix + e.Name + "/", Name: e.Name, Folder: true, Type: "folder"})
 			continue
 		}
-		entry := backend.Entry{Key: prefix + e.Name, Name: e.Name, Size: int64(e.Size), ETag: backend.VersionTag(int64(e.Size), e.Time), Type: media.FileType(e.Name)}
+		entry := backend.Entry{Key: prefix + e.Name, Name: e.Name, Size: int64(e.Size), ETag: c.versionTag(prefix+e.Name, int64(e.Size), e.Time), Type: media.FileType(e.Name)}
 		if !e.Time.IsZero() {
 			entry.Modified = e.Time.UTC().Format(time.RFC3339)
 		}
@@ -206,7 +206,7 @@ func (c *Client) Walk(ctx context.Context, prefix string, visit func(backend.Obj
 				queue = append(queue, key)
 				continue
 			}
-			if err := visit(backend.Object{Key: dir + e.Name, ETag: backend.VersionTag(int64(e.Size), e.Time), Size: int64(e.Size), Modified: e.Time}); err != nil {
+			if err := visit(backend.Object{Key: dir + e.Name, ETag: c.versionTag(dir+e.Name, int64(e.Size), e.Time), Size: int64(e.Size), Modified: e.Time}); err != nil {
 				return err
 			}
 		}
@@ -232,7 +232,7 @@ func (c *Client) Stat(ctx context.Context, key string) (backend.Object, error) {
 	}
 	obj := backend.Object{Key: key, Size: int64(e.Size), Modified: e.Time, Directory: e.Type == ftpclient.EntryTypeFolder}
 	if !obj.Directory {
-		obj.ETag = backend.VersionTag(obj.Size, obj.Modified)
+		obj.ETag = c.versionTag(key, obj.Size, obj.Modified)
 	}
 	return obj, nil
 }
@@ -303,4 +303,8 @@ func (c *Client) Open(ctx context.Context, key string, offset, length int64) (io
 		r = io.LimitReader(resp, length)
 	}
 	return &transfer{Reader: r, resp: resp, client: c, conn: sc, remain: length}, nil
+}
+
+func (c *Client) versionTag(key string, size int64, modified time.Time) string {
+	return backend.VersionTag(fmt.Sprintf("ftp:%q:%q:%q:%t", c.cfg.Addr, c.cfg.Username, c.cfg.Root, c.cfg.TLS), key, size, modified)
 }

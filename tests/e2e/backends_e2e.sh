@@ -1,9 +1,9 @@
 #!/bin/sh
 # Runs mori against real WebDAV (Apache), FTP (vsftpd), and SFTP (OpenSSH)
 # servers in Docker. Requires Docker and network access to pull images.
-# Usage: tests/backends_e2e.sh [webdav] [ftp] [sftp]
+# Usage: sh tests/e2e/backends_e2e.sh [webdav] [ftp] [sftp]
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 work=$(mktemp -d)
 net=mori-e2e-$$
 cleanup() {
@@ -18,7 +18,7 @@ trap cleanup EXIT
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src:ro -v "$work":/out -w /src \
 	-e CGO_ENABLED=0 -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/go -e GOFLAGS=-buildvcs=false \
 	golang:1.26-alpine go build -trimpath -o /out/mori ./cmd/mori
-cp tests/backends_e2e.py "$work/smoke.py"
+cp tests/e2e/backends_e2e.py "$work/smoke.py"
 d="$work/data"
 mkdir -p "$d/docs/sub/deep" "$d/docs/sub/empty"
 printf '0123456789abcdefghijklmnopqrstuvwxyz0123' >"$d/README.md"
@@ -30,7 +30,9 @@ head -c 3000000 /dev/urandom >"$d/docs/big.bin"
 chmod -R a+rwX "$d"
 
 docker network create "$net" >/dev/null
-docker run -d --name "$net-sftp" --network "$net" --network-alias mt-sftp -v "$d":/home/tester/files atmoz/sftp:alpine tester:secret:1000 >/dev/null
+# Generate a disposable client key; never read a developer's SSH credentials.
+ssh-keygen -q -t ed25519 -N '' -f "$work/clientkey"
+docker run -d --name "$net-sftp" --network "$net" --network-alias mt-sftp -v "$d":/home/tester/files -v "$work/clientkey.pub":/home/tester/.ssh/keys/mori.pub:ro atmoz/sftp:alpine tester:secret:1000 >/dev/null
 docker run -d --name "$net-ftp" --network "$net" --network-alias mt-ftp -e USERS="tester|secret|/home/tester|1000" -e ADDRESS=mt-ftp -v "$d":/home/tester/files delfer/alpine-ftp-server >/dev/null
 docker run -d --name "$net-dav" --network "$net" --network-alias mt-dav -e AUTH_TYPE=Basic -e USERNAME=tester -e PASSWORD=secret -v "$d":/var/lib/dav/data bytemark/webdav >/dev/null
 sleep 6

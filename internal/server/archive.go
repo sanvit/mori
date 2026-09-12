@@ -165,7 +165,7 @@ func (a *App) prepareArchive(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "zip_queue_full", "대기 중인 ZIP 요청이 많습니다. 잠시 후 다시 시도해 주세요.")
 		return
 	}
-	jsonOut(w, map[string]any{"url": "/api/archive?token=" + token, "filename": plan.Filename, "files": plan.Files, "folders": plan.Directories, "size": plan.Size, "expiresIn": int(archivePlanTTL / time.Second)})
+	jsonOut(w, map[string]any{"url": "/_mori/api/archive?token=" + token, "filename": plan.Filename, "files": plan.Files, "folders": plan.Directories, "size": plan.Size, "expiresIn": int(archivePlanTTL / time.Second)})
 }
 
 func (a *App) streamArchive(w http.ResponseWriter, r *http.Request) {
@@ -262,9 +262,20 @@ func (a *App) streamArchive(w http.ResponseWriter, r *http.Request) {
 
 // openArchiveItem returns the body of one planned file, failing with 412 if
 // the object no longer matches the plan. S3 enforces this atomically with
-// If-Match; other backends re-stat before opening and rely on the length
-// check while copying.
+// If-Match; the shared reader verifies other backends' metadata before and
+// after reading. Metadata tokens are not content hashes or atomic snapshots.
 func (a *App) openArchiveItem(ctx context.Context, item archiveItem) (io.ReadCloser, error) {
+	if a.objects != nil {
+		resp, err := a.objects.Response(ctx, http.MethodGet, item.Key, http.Header{"If-Match": {item.ETag}}, true)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("ETag") != item.ETag || resp.Header.Get("Content-Length") != fmt.Sprint(item.Size) {
+			resp.Body.Close()
+			return nil, &backend.UpstreamError{Status: 412, Code: "ObjectChanged"}
+		}
+		return resp.Body, nil
+	}
 	if a.s3 != nil {
 		resp, err := a.s3.Object(ctx, http.MethodGet, item.Key, http.Header{"If-Match": {item.ETag}})
 		if err != nil {

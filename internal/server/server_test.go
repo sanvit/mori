@@ -20,7 +20,7 @@ import (
 
 func testConfig() config.Config {
 	u, _ := url.Parse("http://127.0.0.1:1")
-	return config.Config{Endpoint: u, Title: "Test", Bucket: "test-bucket", Region: "ap-northeast-2", PathStyle: true, ListingTTL: time.Minute, ListingMax: 4, CacheEnabled: true}
+	return config.Config{Endpoint: u, HealthPath: "/_mori/healthz", Title: "Test", Bucket: "test-bucket", Region: "ap-northeast-2", PathStyle: true, ListingTTL: time.Minute, ListingMax: 4, CacheEnabled: true}
 }
 func call(a *App, method, target string, h http.Header) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, target, nil)
@@ -56,7 +56,7 @@ func fixtureApp(t *testing.T) *App {
 func TestS3ListCacheAndAssets(t *testing.T) {
 	a := fixtureApp(t)
 	for _, want := range []string{"MISS", "HIT"} {
-		w := call(a, "GET", "/api/list", nil)
+		w := call(a, "GET", "/_mori/api/list", nil)
 		var l backend.Listing
 		if e := json.Unmarshal(w.Body.Bytes(), &l); e != nil {
 			t.Fatal(e)
@@ -65,10 +65,10 @@ func TestS3ListCacheAndAssets(t *testing.T) {
 			t.Fatalf("%d %s %+v", w.Code, w.Header().Get("X-Listing-Cache"), l)
 		}
 	}
-	if w := call(a, "GET", "/api/list?refresh=1", nil); w.Header().Get("X-Listing-Cache") != "MISS" {
+	if w := call(a, "GET", "/_mori/api/list?refresh=1", nil); w.Header().Get("X-Listing-Cache") != "MISS" {
 		t.Fatal("refresh did not bypass list cache")
 	}
-	for _, p := range []string{"/", "/app.js", "/styles.css", "/favicon.svg"} {
+	for _, p := range []string{"/", "/_mori/assets/app.js", "/_mori/assets/styles.css", "/_mori/assets/favicon.svg"} {
 		w := call(a, "GET", p, nil)
 		if w.Code != 200 || w.Body.Len() == 0 {
 			t.Fatal(p, w.Code)
@@ -82,7 +82,7 @@ func TestS3ListCacheAndAssets(t *testing.T) {
 }
 func TestS3RangeHEADAndConditional(t *testing.T) {
 	a := fixtureApp(t)
-	p := "/api/object?key=README.md"
+	p := "/_mori/api/object?key=README.md"
 	w := call(a, "GET", p, http.Header{"Range": {"bytes=0-15"}})
 	if w.Code != 206 || w.Body.String() != "0123456789abcdef" || w.Header().Get("Content-Range") != "bytes 0-15/40" {
 		t.Fatal(w.Code, w.Body.String(), w.Header())
@@ -109,10 +109,10 @@ func TestAuthAndReadOnly(t *testing.T) {
 	c.Username = "admin"
 	c.Password = "strong-password"
 	a := New(c)
-	if call(a, "GET", "/api/config", nil).Code != 401 {
+	if call(a, "GET", "/_mori/api/config", nil).Code != 401 {
 		t.Fatal("missing auth accepted")
 	}
-	r := httptest.NewRequest("GET", "/api/config", nil)
+	r := httptest.NewRequest("GET", "/_mori/api/config", nil)
 	r.SetBasicAuth(c.Username, c.Password)
 	w := httptest.NewRecorder()
 	a.ServeHTTP(w, r)
@@ -120,11 +120,11 @@ func TestAuthAndReadOnly(t *testing.T) {
 		t.Fatal("valid auth denied")
 	}
 	for _, m := range []string{"POST", "PUT", "PATCH", "DELETE"} {
-		if call(a, m, "/api/object?key=x", nil).Code != 405 {
+		if call(a, m, "/_mori/api/object?key=x", nil).Code != 405 {
 			t.Fatal(m)
 		}
 	}
-	if call(a, "GET", "/healthz", nil).Code != 200 {
+	if call(a, "GET", "/_mori/healthz", nil).Code != 200 {
 		t.Fatal("health auth")
 	}
 }
@@ -135,7 +135,7 @@ func TestConfigDoesNotExposeSecrets(t *testing.T) {
 	c.SessionToken = "SESSION_TOKEN_TEST"
 	c.Password = "BASIC_PASSWORD_TEST"
 	a := New(c)
-	w := call(a, "GET", "/api/config", nil)
+	w := call(a, "GET", "/_mori/api/config", nil)
 	for _, s := range []string{c.AccessKey, c.SecretKey, c.SessionToken, c.Password} {
 		if strings.Contains(w.Body.String(), s) {
 			t.Fatal("secret exposed")
@@ -145,23 +145,23 @@ func TestConfigDoesNotExposeSecrets(t *testing.T) {
 func TestPathValidationAndSafePreviewHeaders(t *testing.T) {
 	a := fixtureApp(t)
 	for _, key := range []string{"../x", "a/./b", "a//b", "a\\b", "/absolute"} {
-		u := "/api/object?" + url.Values{"key": {key}}.Encode()
+		u := "/_mori/api/object?" + url.Values{"key": {key}}.Encode()
 		if call(a, "GET", u, nil).Code != 400 {
 			t.Fatal(key)
 		}
 	}
-	w := call(a, "GET", "/api/list?prefix=not-a-directory", nil)
+	w := call(a, "GET", "/_mori/api/list?prefix=not-a-directory", nil)
 	if w.Code != 400 {
 		t.Fatal(w.Code)
 	}
-	w = call(a, "GET", "/api/object?key=evil.html", nil)
+	w = call(a, "GET", "/_mori/api/object?key=evil.html", nil)
 	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") || w.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
 		t.Fatal("unsafe content headers")
 	}
 }
 func TestArchiveRequiresPreparedToken(t *testing.T) {
 	a := New(testConfig())
-	if call(a, "GET", "/api/archive?key=README.md", nil).Code != 410 {
+	if call(a, "GET", "/_mori/api/archive?key=README.md", nil).Code != 410 {
 		t.Fatal("archive must require a prepared, single-use token")
 	}
 }
@@ -179,9 +179,8 @@ func TestHTTPProxyHeaderSafety(t *testing.T) {
 	defer s.Close()
 	c := testConfig()
 	c.Endpoint, _ = url.Parse(s.URL)
-	c.Proxy, _ = url.Parse(s.URL)
-	w := call(New(c), "GET", "/api/object?key=test.txt", http.Header{"Range": {"bytes=0-3"}})
-	if w.Code != 206 || w.Body.String() != "test" || w.Header().Get("X-Cache") != "HIT" || w.Header().Get("Set-Cookie") != "" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+	w := call(New(c), "GET", "/_mori/api/object?key=test.txt", http.Header{"Range": {"bytes=0-3"}})
+	if w.Code != 206 || w.Body.String() != "test" || w.Header().Get("X-Cache") != "BYPASS" || w.Header().Get("Set-Cookie") != "" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
 		t.Fatal(w.Code, w.Header(), w.Body.String())
 	}
 }
@@ -194,7 +193,7 @@ func TestUpstreamErrorsPropagate(t *testing.T) {
 		c := testConfig()
 		c.Endpoint, _ = url.Parse(s.URL)
 		a := New(c)
-		w := call(a, "GET", "/api/list", nil)
+		w := call(a, "GET", "/_mori/api/list", nil)
 		want := status
 		if status == 500 {
 			want = 502
@@ -228,7 +227,7 @@ func TestListFetchesOnlyOneMetadataPage(t *testing.T) {
 	c := testConfig()
 	c.Endpoint, _ = url.Parse(s.URL)
 	a := New(c)
-	w := call(a, "GET", "/api/list", nil)
+	w := call(a, "GET", "/_mori/api/list", nil)
 	var l backend.Listing
 	if e := json.Unmarshal(w.Body.Bytes(), &l); e != nil {
 		t.Fatal(e)
@@ -236,11 +235,11 @@ func TestListFetchesOnlyOneMetadataPage(t *testing.T) {
 	if l.Cursor != "next" || listCalls.Load() != 1 || objectCalls.Load() != 0 {
 		t.Fatal("listing traversed pages or downloaded an object")
 	}
-	call(a, "GET", "/api/list", nil)
+	call(a, "GET", "/_mori/api/list", nil)
 	if listCalls.Load() != 1 {
 		t.Fatal("metadata cache missed")
 	}
-	w = call(a, "GET", "/api/list?cursor=next", nil)
+	w = call(a, "GET", "/_mori/api/list?cursor=next", nil)
 	if w.Code != 200 || listCalls.Load() != 2 || objectCalls.Load() != 0 {
 		t.Fatal("next metadata page", w.Code)
 	}
@@ -268,7 +267,7 @@ func TestObjectStreamsBeforeOriginFinishes(t *testing.T) {
 	defer unblock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	r, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/api/object?key=large.bin&download=1", nil)
+	r, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/_mori/api/object?key=large.bin&download=1", nil)
 	response, e := server.Client().Do(r)
 	if e != nil {
 		t.Fatal("no response before origin EOF", e)
@@ -300,7 +299,7 @@ func TestClientDisconnectCancelsOrigin(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	r, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/api/object?key=large.bin", nil)
+	r, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/_mori/api/object?key=large.bin", nil)
 	response, e := server.Client().Do(r)
 	if e != nil {
 		t.Fatal(e)
@@ -317,8 +316,8 @@ func TestClientDisconnectCancelsOrigin(t *testing.T) {
 		t.Fatal("upstream continued after cancellation")
 	}
 }
-func TestProxyHealthRouteDoesNotShadowObject(t *testing.T) {
-	originCalls, proxyCalls := 0, 0
+func TestHealthNamedObjectUsesOrigin(t *testing.T) {
+	originCalls := 0
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		originCalls++
 		if r.URL.Path != "/test-bucket/public/healthz" {
@@ -327,16 +326,12 @@ func TestProxyHealthRouteDoesNotShadowObject(t *testing.T) {
 		io.WriteString(w, "actual object")
 	}))
 	defer origin.Close()
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { proxyCalls++; io.WriteString(w, "ok") }))
-	defer proxy.Close()
 	c := testConfig()
 	c.Prefix = "public/"
-	c.ProxyHealthPath = "/healthz"
 	c.Endpoint, _ = url.Parse(origin.URL)
-	c.Proxy, _ = url.Parse(proxy.URL)
 	a := New(c)
-	w := call(a, "GET", "/api/object?key=healthz", nil)
-	if w.Body.String() != "actual object" || originCalls != 1 || proxyCalls != 0 || w.Header().Get("X-Cache") != "BYPASS" {
-		t.Fatal(w.Body.String(), originCalls, proxyCalls, w.Header())
+	w := call(a, "GET", "/_mori/api/object?key=healthz", nil)
+	if w.Body.String() != "actual object" || originCalls != 1 || w.Header().Get("X-Cache") != "BYPASS" {
+		t.Fatal(w.Body.String(), originCalls, w.Header())
 	}
 }

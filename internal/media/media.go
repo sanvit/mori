@@ -6,6 +6,7 @@ import (
 	"mime"
 	"path"
 	"strings"
+	"unicode/utf8"
 )
 
 // FileType maps an object key to a MIME type. Common media types are listed
@@ -91,6 +92,41 @@ func Presentation(key string, download bool) (contentType, disposition string) {
 		disposition = "attachment"
 	}
 	return contentType, mime.FormatMediaType(disposition, map[string]string{"filename": path.Base(key)})
+}
+
+// Disposition preserves a valid origin filename and inline/attachment choice,
+// but supplies a URL-derived basename when absent/invalid. FormatMediaType
+// encodes Unicode as filename*=utf-8”... instead of raw non-ASCII bytes.
+func Disposition(raw, key string) string {
+	kind, params, err := mime.ParseMediaType(raw)
+	if err != nil || (kind != "inline" && kind != "attachment") {
+		kind = "inline"
+		params = nil
+		if strings.HasPrefix(strings.ToLower(raw), "attachment") {
+			kind = "attachment"
+		}
+	}
+	name := params["filename"]
+	if !validFilename(name) {
+		name = path.Base(key)
+	}
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	if !validFilename(name) || name == "." || name == ".." || name == "/" {
+		name = "download"
+	}
+	return mime.FormatMediaType(kind, map[string]string{"filename": name})
+}
+
+func validFilename(name string) bool {
+	if name == "" || !utf8.ValidString(name) {
+		return false
+	}
+	for _, r := range name {
+		if r < 32 || r == 127 {
+			return false
+		}
+	}
+	return true
 }
 func safeMediaType(t string) bool {
 	switch t {

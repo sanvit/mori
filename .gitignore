@@ -6,6 +6,7 @@ bin/
 /dist/
 /release-bin/
 /mori
+/cache/
 __pycache__/
 *.pyc
 node_modules/

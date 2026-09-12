@@ -116,21 +116,14 @@ func signRequest(r *http.Request, c config.Config, now time.Time) {
 	r.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+c.AccessKey+"/"+scope+", SignedHeaders="+names+", Signature="+hex.EncodeToString(mac(k, toSign)))
 }
 
-// Request performs one signed S3 request for key (already including the
-// configured prefix). With proxy set and a proxy configured, the unsigned
-// request goes to the caching proxy instead.
-func (o *Origin) Request(ctx context.Context, method, key string, q url.Values, headers http.Header, proxy bool) (*http.Response, error) {
+// Request performs one signed S3 request for a key including the configured prefix.
+func (o *Origin) Request(ctx context.Context, method, key string, q url.Values, headers http.Header) (*http.Response, error) {
 	u := *o.cfg.Endpoint
-	if proxy && o.cfg.Proxy != nil {
-		u = *o.cfg.Proxy
-		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + key
+	if o.cfg.PathStyle {
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + o.cfg.Bucket + "/" + key
 	} else {
-		if o.cfg.PathStyle {
-			u.Path = strings.TrimSuffix(u.Path, "/") + "/" + o.cfg.Bucket + "/" + key
-		} else {
-			u.Host = o.cfg.Bucket + "." + u.Host
-			u.Path = strings.TrimSuffix(u.Path, "/") + "/" + key
-		}
+		u.Host = o.cfg.Bucket + "." + u.Host
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + key
 	}
 	u.RawPath = escapedPath(u.Path)
 	u.RawQuery = awsQuery(q)
@@ -143,25 +136,13 @@ func (o *Origin) Request(ctx context.Context, method, key string, q url.Values, 
 			req.Header.Set(k, v)
 		}
 	}
-	if !(proxy && o.cfg.Proxy != nil) {
-		signRequest(req, o.cfg, time.Now())
-	}
+	signRequest(req, o.cfg, time.Now())
 	return o.client.Do(req)
-}
-
-// UsesProxy reports whether key's body is served through the caching proxy.
-// A proxy liveness route must not shadow an S3 object with the same key.
-func (o *Origin) UsesProxy(key string) bool {
-	return o.cfg.Proxy != nil && (o.cfg.ProxyHealthPath == "" || o.cfg.ProxyPrefix+key != strings.TrimPrefix(o.cfg.ProxyHealthPath, "/"))
 }
 
 // Object fetches key (relative to the configured prefix) with GET or HEAD.
 func (o *Origin) Object(ctx context.Context, method, key string, h http.Header) (*http.Response, error) {
-	if !o.UsesProxy(key) {
-		return o.Request(ctx, method, o.cfg.Prefix+key, nil, h, false)
-	}
-	// The cache proxy adds S3_PREFIX itself; send only the base path.
-	return o.Request(ctx, method, o.cfg.ProxyPrefix+key, nil, h, true)
+	return o.Request(ctx, method, o.cfg.Prefix+key, nil, h)
 }
 
 // List returns one page of the folder at prefix.
@@ -171,7 +152,7 @@ func (o *Origin) List(ctx context.Context, prefix, cursor string) (backend.Listi
 	if cursor != "" {
 		q.Set("continuation-token", cursor)
 	}
-	r, e := o.Request(ctx, "GET", "", q, nil, false)
+	r, e := o.Request(ctx, "GET", "", q, nil)
 	if e != nil {
 		return backend.Listing{}, e
 	}
@@ -240,7 +221,7 @@ func ReadError(r *http.Response) error {
 
 // Stat is a HEAD request; it never reads the body.
 func (o *Origin) Stat(ctx context.Context, key string) (backend.Object, error) {
-	resp, err := o.Request(ctx, http.MethodHead, o.cfg.Prefix+key, nil, nil, false)
+	resp, err := o.Request(ctx, http.MethodHead, o.cfg.Prefix+key, nil, nil)
 	if err != nil {
 		return backend.Object{}, err
 	}

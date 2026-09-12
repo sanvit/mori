@@ -15,8 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"mori/internal/s3"
 )
 
 func archiveFixture(t *testing.T, hook func(http.ResponseWriter, *http.Request) bool) (*App, *atomic.Int32, *atomic.Int32) {
@@ -60,7 +58,7 @@ func archiveFixture(t *testing.T, hook func(http.ResponseWriter, *http.Request) 
 	return New(c), heads, gets
 }
 func postArchive(a *App, body string, headers http.Header) *httptest.ResponseRecorder {
-	req := httptest.NewRequest("POST", "/api/archive", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/_mori/api/archive", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Mori-Request", "1")
 	for k, v := range headers {
@@ -171,10 +169,10 @@ func TestArchiveCSRFAndAuth(t *testing.T) {
 	}
 	a.cfg.Username = "admin"
 	a.cfg.Password = "test-password"
-	if postArchive(a, body, nil).Code != 401 || call(a, "GET", "/api/archive?token=x", nil).Code != 401 {
+	if postArchive(a, body, nil).Code != 401 || call(a, "GET", "/_mori/api/archive?token=x", nil).Code != 401 {
 		t.Fatal("ZIP bypassed auth")
 	}
-	if call(a, "HEAD", "/api/archive", nil).Code != 401 {
+	if call(a, "HEAD", "/_mori/api/archive", nil).Code != 401 {
 		t.Fatal("HEAD bypassed auth")
 	}
 }
@@ -196,7 +194,7 @@ func TestArchiveLimitBusyDoesNotConsumeTicket(t *testing.T) {
 	if w := call(a, "GET", link, nil); w.Code != 200 {
 		t.Fatal("ticket lost while busy/ranged", w.Code)
 	}
-	if w := call(a, "HEAD", "/api/archive", nil); w.Code != 405 {
+	if w := call(a, "HEAD", "/_mori/api/archive", nil); w.Code != 405 {
 		t.Fatal(w.Code)
 	}
 }
@@ -304,34 +302,12 @@ func TestArchiveStreamsAndCancelsOrigin(t *testing.T) {
 		t.Fatal("client cancel did not reach ZIP origin")
 	}
 }
-func TestArchiveUsesCacheProxyForBodyOnly(t *testing.T) {
-	a, heads, gets := archiveFixture(t, nil)
-	var calls atomic.Int32
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		if r.URL.Path != "/docs/a.txt" || r.Header.Get("Authorization") != "" || r.Header.Get("If-Match") == "" {
-			t.Error("unsafe proxy request", r.URL.Path, r.Header)
-		}
-		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256([]byte("hello"))))
-		w.Header().Set("Content-Length", "5")
-		io.WriteString(w, "hello")
-	}))
-	defer proxy.Close()
-	a.cfg.Proxy, _ = url.Parse(proxy.URL)
-	a.s3 = s3.New(a.cfg)
-	a.store = a.s3
-	link := prepareZIP(t, a, "docs/a.txt")
-	if w := call(a, "GET", link, nil); w.Code != 200 || heads.Load() != 1 || gets.Load() != 0 || calls.Load() != 1 {
-		t.Fatal("ZIP bypassed configured body cache", w.Code, heads.Load(), gets.Load(), calls.Load())
-	}
-}
-
 func TestArchiveDisabled(t *testing.T) {
 	a, heads, gets := archiveFixture(t, nil)
 	link := prepareZIP(t, a, "docs/a.txt")
 	a.cfg.ZipDisabled = true
 	var cfg map[string]any
-	json.Unmarshal(call(a, "GET", "/api/config", nil).Body.Bytes(), &cfg)
+	json.Unmarshal(call(a, "GET", "/_mori/api/config", nil).Body.Bytes(), &cfg)
 	if cfg["zipEnabled"] != false {
 		t.Fatal("config must report ZIP disabled", cfg)
 	}
@@ -339,7 +315,7 @@ func TestArchiveDisabled(t *testing.T) {
 	for _, w := range []*httptest.ResponseRecorder{
 		postArchive(a, `{"prefix":"docs/","keys":["docs/a.txt"]}`, nil),
 		call(a, "GET", link, nil),
-		call(a, "HEAD", "/api/archive", nil),
+		call(a, "HEAD", "/_mori/api/archive", nil),
 	} {
 		if w.Code != 404 || !strings.Contains(w.Body.String(), "zip_disabled") {
 			t.Fatal(w.Code, w.Body.String())
@@ -353,11 +329,11 @@ func TestArchiveDisabled(t *testing.T) {
 		t.Fatal("disabled ZIP must still require auth first", w.Code)
 	}
 	a.cfg.Username, a.cfg.Password = "", ""
-	if w := call(a, "HEAD", "/api/object?key=docs/a.txt&download=1", nil); w.Code != 200 || w.Header().Get("Content-Length") != "5" {
+	if w := call(a, "HEAD", "/_mori/api/object?key=docs/a.txt&download=1", nil); w.Code != 200 || w.Header().Get("Content-Length") != "5" {
 		t.Fatal("single-file download must keep working", w.Code)
 	}
 	a.cfg.ZipDisabled = false
-	json.Unmarshal(call(a, "GET", "/api/config", nil).Body.Bytes(), &cfg)
+	json.Unmarshal(call(a, "GET", "/_mori/api/config", nil).Body.Bytes(), &cfg)
 	if cfg["zipEnabled"] != true {
 		t.Fatal(cfg)
 	}

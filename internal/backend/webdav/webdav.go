@@ -139,12 +139,12 @@ func (c *Client) propfind(ctx context.Context, key, depth string) ([]resource, e
 			if p.Modified != "" {
 				res.modified, _ = http.ParseTime(strings.TrimSpace(p.Modified))
 			}
-			if t := strings.TrimSpace(p.ETag); t != "" && !strings.HasPrefix(t, "W/") {
+			if t := strings.TrimSpace(p.ETag); backend.ValidETag(t) {
 				res.etag = t
 			}
 		}
 		if !res.dir && res.etag == "" {
-			res.etag = backend.VersionTag(res.size, res.modified)
+			res.etag = backend.VersionTag(fmt.Sprintf("webdav:%q:%q", c.base.String(), c.user), res.path, res.size, res.modified)
 		}
 		out = append(out, res)
 	}

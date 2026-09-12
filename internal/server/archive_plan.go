@@ -20,7 +20,8 @@ func zipError(status int, code, message string) error { return &archiveError{sta
 
 // Build a bounded metadata-only plan. Explicit file keys use a fresh Stat;
 // recursive files use fresh listing metadata (not client sizes or list cache).
-// GET still enforces If-Match/ETag/length, so changed files cannot silently pass.
+// Reads enforce native If-Match or an internal metadata token and length.
+// Metadata-only tokens cannot detect same-size, same-timestamp replacements.
 func (a *App) buildArchivePlan(ctx context.Context, prefix string, keys []string) (archivePlan, error) {
 	plan := archivePlan{Filename: "files.zip"}
 	if config.ValidateKey(prefix, true) != nil || (prefix != "" && !strings.HasSuffix(prefix, "/")) || len(a.cfg.Prefix+prefix) > 1024 {
@@ -70,7 +71,7 @@ func (a *App) buildArchivePlan(ctx context.Context, prefix string, keys []string
 			}
 			plan.Directories++
 		} else {
-			if item.Size < 0 || item.ETag == "" || strings.HasPrefix(item.ETag, "W/") {
+			if item.Size < 0 || !backend.ValidETag(item.ETag) || (a.s3 != nil && !backend.StrongETag(item.ETag)) {
 				return zipError(502, "zip_metadata_missing", "저장소가 ZIP에 필요한 파일 크기 또는 버전 정보를 반환하지 않았습니다.")
 			}
 			if plan.Files >= a.cfg.ZipMaxFiles {

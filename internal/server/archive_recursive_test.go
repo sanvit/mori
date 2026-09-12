@@ -321,27 +321,27 @@ func TestArchivePendingEntryBudget(t *testing.T) {
 func TestBasePathConfinesBrowserRoot(t *testing.T) {
 	data := map[string]string{"docs/a.txt": "root", "docs/sub/x.txt": "x", "elsewhere/leak.txt": "secret", "docs.txt": "sibling"}
 	a, stats := recursiveFixture(t, data, 1000)
-	a.cfg.Prefix, a.cfg.ProxyPrefix, a.cfg.BasePath = "public/docs/", "docs/", "docs/"
+	a.cfg.Prefix, a.cfg.BasePath = "public/docs/", "docs/"
 	a.s3 = s3.New(a.cfg)
 	a.store = a.s3
-	w := call(a, "GET", "/api/list", nil)
+	w := call(a, "GET", "/_mori/api/list", nil)
 	var l backend.Listing
 	json.Unmarshal(w.Body.Bytes(), &l)
 	if w.Code != 200 || len(l.Entries) != 2 || l.Entries[0].Key != "sub/" || l.Entries[1].Key != "a.txt" || strings.Contains(w.Body.String(), "docs") || strings.Contains(w.Body.String(), "public") {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if w = call(a, "GET", "/api/config", nil); strings.Contains(w.Body.String(), "docs") {
+	if w = call(a, "GET", "/_mori/api/config", nil); strings.Contains(w.Body.String(), "docs") {
 		t.Fatal("config leaked base path", w.Body.String())
 	}
-	if w = call(a, "HEAD", "/api/object?key=a.txt", nil); w.Code != 200 || w.Header().Get("Content-Length") != "4" {
+	if w = call(a, "HEAD", "/_mori/api/object?key=a.txt", nil); w.Code != 200 || w.Header().Get("Content-Length") != "4" {
 		t.Fatal(w.Code)
 	}
 	for _, key := range []string{"../elsewhere/leak.txt", "../docs.txt", "/elsewhere/leak.txt"} {
-		if w = call(a, "GET", "/api/object?"+url.Values{"key": {key}}.Encode(), nil); w.Code != 400 {
+		if w = call(a, "GET", "/_mori/api/object?"+url.Values{"key": {key}}.Encode(), nil); w.Code != 400 {
 			t.Fatal("escaped base path", key, w.Code)
 		}
 	}
-	if w = call(a, "HEAD", "/api/object?key=elsewhere/leak.txt", nil); w.Code != 404 {
+	if w = call(a, "HEAD", "/_mori/api/object?key=elsewhere/leak.txt", nil); w.Code != 404 {
 		t.Fatal(w.Code)
 	}
 	b, _ := json.Marshal(map[string]any{"prefix": "", "keys": []string{"sub/", "a.txt"}})

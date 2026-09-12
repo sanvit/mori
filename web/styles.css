@@ -37,7 +37,8 @@ table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 
 .size-col { width: 118px; }
 .action-col { width: 51px; }
 th { text-align: left; font-weight: 400; height: 45px; padding: 0 13px; border-bottom: 1px solid #e4e9ec; color: #71808c; }
-th button { padding: 6px 0; background: none; color: inherit; border: 0; font-size: 11px; letter-spacing: .02em; }
+th button { padding: 6px 0; background: none; color: inherit; border: 0; }
+th button, .mobile-sort select { font-family: inherit; font-size: 11px; font-weight: 400; letter-spacing: .02em; }
 th[aria-sort="ascending"] button, th[aria-sort="descending"] button { color: #566774; }
 th button:hover { color: var(--accent); }
 .sort-mark { display: inline-block; width: 14px; margin-left: 5px; font-size: 12px; }
@@ -137,7 +138,7 @@ tr.selected { background: #f1f7fb; }
   .breadcrumbs .root-icon { width: 20px; height: 20px; }
   .tools { gap: 1px; }
   .mobile-sort { display: block; flex: none; margin-left: auto; }
-  .mobile-sort select { border: 0; background: transparent; color: #72828e; height: 44px; font-size: 16px; max-width: 110px; cursor: pointer; }
+  .mobile-sort select { border: 0; background: transparent; color: #72828e; height: 44px; max-width: 110px; cursor: pointer; }
   .icon-button { width: 44px; height: 44px; padding: 12px; }
   .select-col { width: 44px; }
   .action-col { width: 44px; }

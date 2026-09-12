@@ -30,7 +30,7 @@ func (o *Origin) Walk(ctx context.Context, prefix string, visit func(backend.Obj
 		if cursor != "" {
 			q.Set("continuation-token", cursor)
 		}
-		resp, err := o.Request(ctx, http.MethodGet, "", q, nil, false)
+		resp, err := o.Request(ctx, http.MethodGet, "", q, nil)
 		if err != nil {
 			return err
 		}

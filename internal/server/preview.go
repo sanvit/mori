@@ -32,7 +32,7 @@ func (a *App) preview(w http.ResponseWriter, r *http.Request) {
 		jsonOut(w, result)
 		return
 	}
-	source := "/api/object?" + url.Values{"key": {key}}.Encode()
+	source := "/_mori/api/object?" + url.Values{"key": {key}}.Encode()
 	if a.cfg.PreviewMode == "presigned" && a.s3 != nil && !renderHTML {
 		now := time.Now()
 		var err error

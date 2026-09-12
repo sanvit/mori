@@ -4,20 +4,20 @@ Application JS is evaluated in an isolated about:blank document. HTTP responses,
 image transport, and the PDF.js API are explicit TEST DOUBLES. Media Chrome is
 unavailable in this test, so only its native-control fallback is exercised.
 No double is shipped in web/ or used by the application at runtime.
-Run: python3 tests/preview_dom.py
+Run: python3 -m tests.ui.preview_dom
 MORI_TEST_SCREENSHOTS=/path saves list/image-only fixture screenshots.
 """
 import os
 from pathlib import Path
 import shutil
 from playwright.sync_api import sync_playwright, expect
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 html=(ROOT/'web/index.html').read_text()
 for script in ('app.js','preview.js'):
-    html=html.replace(f'<script src="/{script}" defer></script>','')
+    html=html.replace(f'<script src="/_mori/assets/{script}" defer></script>','')
 for css in ('styles.css','preview.css'):
-    html=html.replace(f'<link rel="stylesheet" href="/{css}">','<style>'+(ROOT/'web'/css).read_text()+'</style>')
-html=html.replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">','')
+    html=html.replace(f'<link rel="stylesheet" href="/_mori/assets/{css}">','<style>'+(ROOT/'web'/css).read_text()+'</style>')
+html=html.replace('<link rel="icon" href="/_mori/assets/favicon.svg" type="image/svg+xml">','')
 fixtures=r'''() => {
   window.calls=[]; window.textCancelled=0; window.pdfDestroyed=0; window.pdfCancelled=0; window.pdfOptions=[]; window.pdfTextFailure=false; window.pdfTextLarge=false; window.pdfTextCancelled=0;
   delete ReadableStream.prototype[Symbol.asyncIterator];
@@ -40,9 +40,9 @@ fixtures=r'''() => {
   window.fetch=async (value,opts={})=>{
     const url=String(value), u=new URL(url,'https://fixture.invalid');
     calls.push({url,credentials:opts.credentials,range:opts.headers?.Range,signal:opts.signal});
-    if(u.pathname==='/api/config') return new Response(JSON.stringify({title:'Files',zipMaxFiles:200,zipMaxBytes:21474836480,downloadMode:'proxy',previewMode:'presigned'}));
-    if(u.pathname==='/api/list') return new Response(JSON.stringify({entries:entries,cursor:''}));
-    if(u.pathname==='/api/preview') {
+    if(u.pathname==='/_mori/api/config') return new Response(JSON.stringify({title:'Files',zipMaxFiles:200,zipMaxBytes:21474836480,downloadMode:'proxy',previewMode:'presigned'}));
+    if(u.pathname==='/_mori/api/list') return new Response(JSON.stringify({entries:entries,cursor:''}));
+    if(u.pathname==='/_mori/api/preview') {
       const key=u.searchParams.get('key');
       return new Response(JSON.stringify({name:key,kind:MoriPreview.kindOf(key),mode:'presigned',url:'https://fixture.invalid/object?'+new URLSearchParams({key}),textLimit:1048576}));
     }
@@ -120,6 +120,12 @@ with sync_playwright() as p:
         assert not page.evaluate('document.documentElement.scrollWidth > innerWidth'),width
         if width<740:
             expect(page.locator('#mobile-sort')).to_be_visible()
+            assert page.evaluate('''() => {
+                const name = getComputedStyle(document.querySelector('[data-sort="name"]'));
+                const sort = getComputedStyle(document.querySelector('#mobile-sort'));
+                return ['fontSize', 'fontFamily', 'fontWeight', 'letterSpacing'].every(key => name[key] === sort[key]);
+            }'''), ('mobile sort typography differs from name header', width)
+            assert page.locator('#mobile-sort').bounding_box()['height']>=44
             box=page.locator('.file-row .download').first.bounding_box(); assert box['width']>=44 and box['height']>=44,box
     page.set_viewport_size({'width':390,'height':844})
     shot('mobile-list.png')

@@ -21,7 +21,7 @@ func testConfig() config.Config {
 	return config.Config{Endpoint: u, Title: "Test", Bucket: "test-bucket", Region: "ap-northeast-2", PathStyle: true, ListingTTL: time.Minute, ListingMax: 4, CacheEnabled: true}
 }
 func TestSigV4AgainstBotocore(t *testing.T) {
-	data, e := os.ReadFile("../../tests/sigv4-fixtures.json")
+	data, e := os.ReadFile("../../tests/fixtures/sigv4-fixtures.json")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -95,14 +95,14 @@ func TestListDoesNotCacheErrorsOrLoopTokens(t *testing.T) {
 		})
 	}
 }
-func TestOriginProxySeparatesCredentialsAndPrefix(t *testing.T) {
+func TestOriginSeparatesCredentialsAndPreservesPrefix(t *testing.T) {
 	var seen bool
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = true
-		if r.URL.Path != "/base/a +&%#.txt" || r.URL.RawQuery != "" {
-			t.Errorf("unexpected proxy URL %s", r.URL.String())
+		if r.URL.Path != "/base/test-bucket/public/a +&%#.txt" || r.URL.RawQuery != "" {
+			t.Errorf("unexpected origin URL %s", r.URL.String())
 		}
-		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") || r.Header.Get("Cookie") != "" {
 			t.Error("credential leak")
 		}
 		if r.Header.Get("Range") != "bytes=2-5" || r.Header.Get("If-Match") != `"v1"` {
@@ -117,15 +117,14 @@ func TestOriginProxySeparatesCredentialsAndPrefix(t *testing.T) {
 	c.Prefix = "public/"
 	c.AccessKey = "TEST"
 	c.SecretKey = "SECRET"
-	c.Endpoint, _ = url.Parse("https://unreachable.invalid")
-	c.Proxy, _ = url.Parse(s.URL + "/base")
+	c.Endpoint, _ = url.Parse(s.URL + "/base")
 	r, e := New(c).Object(context.Background(), "GET", "a +&%#.txt", http.Header{"Range": {"bytes=2-5"}, "If-Match": {`"v1"`}, "Authorization": {"Basic secret"}, "Cookie": {"session=secret"}})
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer r.Body.Close()
 	if !seen || r.Header.Get("X-Cache") != "HIT" {
-		t.Fatal("proxy not used")
+		t.Fatal("origin request failed")
 	}
 }
 func TestDirectOriginSignsAndPreservesKey(t *testing.T) {
@@ -212,10 +211,9 @@ func TestStatAndOpenImplementBackendContract(t *testing.T) {
 	}
 }
 
-// With STORAGE_BASE_PATH, direct requests carry S3_PREFIX plus the base path,
-// while the cache proxy (which adds S3_PREFIX itself) gets only the base path.
-func TestBasePathDirectAndProxyKeys(t *testing.T) {
-	var direct, proxied []string
+// STORAGE_BASE_PATH is folded into S3_PREFIX for every origin request.
+func TestBasePathOriginKeys(t *testing.T) {
+	var direct []string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("list-type") == "2" {
 			direct = append(direct, "list:"+r.URL.Query().Get("prefix"))
@@ -226,14 +224,9 @@ func TestBasePathDirectAndProxyKeys(t *testing.T) {
 		io.WriteString(w, "x")
 	}))
 	defer origin.Close()
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxied = append(proxied, r.URL.Path)
-		io.WriteString(w, "x")
-	}))
-	defer proxy.Close()
 	c := testConfig()
 	c.Endpoint, _ = url.Parse(origin.URL)
-	c.Prefix, c.ProxyPrefix = "public/team/", "team/"
+	c.Prefix = "public/team/"
 	o := New(c)
 	l, err := o.List(context.Background(), "", "")
 	if err != nil || len(l.Entries) != 2 || l.Entries[0].Key != "sub/" || l.Entries[1].Key != "a.txt" {
@@ -249,19 +242,6 @@ func TestBasePathDirectAndProxyKeys(t *testing.T) {
 	r.Body.Close()
 	if strings.Join(direct, ",") != "list:public/team/,HEAD:/test-bucket/public/team/a.txt,GET:/test-bucket/public/team/a.txt" {
 		t.Fatal(direct)
-	}
-	c.Proxy, _ = url.Parse(proxy.URL)
-	c.ProxyHealthPath = "/healthz"
-	o = New(c)
-	for _, key := range []string{"a.txt", "healthz"} {
-		r, err = o.Object(context.Background(), "GET", key, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.Body.Close()
-	}
-	if strings.Join(proxied, ",") != "/team/a.txt,/team/healthz" {
-		t.Fatal("proxy must receive base path without S3_PREFIX", proxied)
 	}
 	c.AccessKey, c.SecretKey, c.PresignTTL = "TESTACCESS", "secret", time.Minute
 	link, err := New(c).Presign("GET", "a.txt", true, time.Now())

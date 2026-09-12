@@ -24,7 +24,7 @@ func TestPreviewSourceModesAndNoOriginBodyRead(t *testing.T) {
 		c.SessionToken = "preview-test-session"
 		a := New(c)
 		key := "하위 폴더/이미지 +&.png"
-		w := call(a, "GET", "/api/preview?"+url.Values{"key": {key}}.Encode(), nil)
+		w := call(a, "GET", "/_mori/api/preview?"+url.Values{"key": {key}}.Encode(), nil)
 		if w.Code != 200 {
 			t.Fatal(w.Code, w.Body.String())
 		}
@@ -46,7 +46,7 @@ func TestPreviewSourceModesAndNoOriginBodyRead(t *testing.T) {
 			t.Fatal(err)
 		}
 		if mode == "proxy" {
-			if u.Host != "" || u.Path != "/api/object" || u.Query().Get("key") != key {
+			if u.Host != "" || u.Path != "/_mori/api/object" || u.Query().Get("key") != key {
 				t.Fatal(u)
 			}
 		} else {
@@ -60,17 +60,17 @@ func TestPreviewSourceModesAndNoOriginBodyRead(t *testing.T) {
 				t.Error("missing expiry")
 			}
 		}
-		w = call(a, "GET", "/api/preview?key=archive.zip", nil)
+		w = call(a, "GET", "/_mori/api/preview?key=archive.zip", nil)
 		if strings.Contains(w.Body.String(), "X-Amz-") || strings.Contains(w.Body.String(), `"url"`) {
 			t.Error("unsupported preview was signed")
 		}
 		for _, bad := range []string{"", "../test.jpg", "folder/", "/test.jpg", "folder//test.jpg"} {
-			w = call(a, "GET", "/api/preview?"+url.Values{"key": {bad}}.Encode(), nil)
+			w = call(a, "GET", "/_mori/api/preview?"+url.Values{"key": {bad}}.Encode(), nil)
 			if w.Code != 400 {
 				t.Errorf("accepted key %q", bad)
 			}
 		}
-		w = call(a, "HEAD", "/api/preview?key=test.jpg", nil)
+		w = call(a, "HEAD", "/_mori/api/preview?key=test.jpg", nil)
 		if w.Code != 405 || w.Header().Get("Location") != "" || strings.Contains(w.Body.String(), "X-Amz-") {
 			t.Error("HEAD presign must not be exposed")
 		}
@@ -81,7 +81,7 @@ func TestPreviewSourceAuthentication(t *testing.T) {
 	c.Username = "reader"
 	c.Password = "test-password"
 	a := New(c)
-	for _, route := range []string{"/api/preview?key=test.png", "/preview.js", "/preview.css", "/vendor/fake.js"} {
+	for _, route := range []string{"/_mori/api/preview?key=test.png", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/vendor/fake.js"} {
 		w := httptest.NewRecorder()
 		a.ServeHTTP(w, httptest.NewRequest("GET", route, nil))
 		if w.Code != 401 {
@@ -115,7 +115,7 @@ func TestPreviewCSPAndAssetRouting(t *testing.T) {
 		}
 	}
 	a := New(testConfig())
-	for _, route := range []string{"/", "/preview.js", "/preview.css", "/app.js", "/styles.css"} {
+	for _, route := range []string{"/", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/app.js", "/_mori/assets/styles.css"} {
 		w := call(a, "GET", route, nil)
 		if w.Code != 200 || w.Body.Len() == 0 || w.Header().Get("ETag") == "" {
 			t.Fatal(route, w.Code)
@@ -128,9 +128,14 @@ func TestPreviewCSPAndAssetRouting(t *testing.T) {
 			t.Error("static ETag not respected")
 		}
 	}
-	for _, route := range []string{"/vendor/", "/vendor/../app.js", "/vendor/../../config.go", "/package.json", "/.env"} {
+	for _, route := range []string{"/_mori/vendor/", "/_mori/assets/package.json", "/_mori/assets/.env"} {
 		if call(a, "GET", route, nil).Code != 404 {
 			t.Error("unexpected asset access", route)
+		}
+	}
+	for _, route := range []string{"/_mori/vendor/../app.js", "/_mori/vendor/../../config.go"} {
+		if call(a, "GET", route, nil).Code != http.StatusBadRequest {
+			t.Errorf("accepted traversal %s", route)
 		}
 	}
 }
@@ -146,7 +151,7 @@ func TestHTMLRenderingOption(t *testing.T) {
 			c.PreviewMode = mode
 			c.AccessKey, c.SecretKey = "test", "test"
 			a := New(c)
-			w := call(a, "GET", "/api/preview?key=page.HTML", nil)
+			w := call(a, "GET", "/_mori/api/preview?key=page.HTML", nil)
 			var source map[string]any
 			if err := json.Unmarshal(w.Body.Bytes(), &source); err != nil {
 				t.Fatal(err)
@@ -158,7 +163,7 @@ func TestHTMLRenderingOption(t *testing.T) {
 				t.Fatal(source)
 			}
 			for _, method := range []string{"GET", "HEAD"} {
-				w = call(a, method, "/api/object?key=page.HTML", nil)
+				w = call(a, method, "/_mori/api/object?key=page.HTML", nil)
 				if !enabled && mode == "presigned" && method == "GET" {
 					continue
 				}
@@ -173,7 +178,7 @@ func TestHTMLRenderingOption(t *testing.T) {
 					t.Fatal(w.Header())
 				}
 			}
-			w = call(a, "GET", "/api/object?key=page.HTML&download=1", nil)
+			w = call(a, "GET", "/_mori/api/object?key=page.HTML&download=1", nil)
 			if !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment;") || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
 				t.Fatal(w.Header())
 			}

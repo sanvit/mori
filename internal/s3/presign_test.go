@@ -27,7 +27,7 @@ func TestPresignAWSOfficialVector(t *testing.T) {
 	}
 }
 func TestPresignAgainstBotocoreFixtures(t *testing.T) {
-	data, err := os.ReadFile("../../tests/presign-fixtures.json")
+	data, err := os.ReadFile("../../tests/fixtures/presign-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}

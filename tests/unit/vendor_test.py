@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('vendor', ROOT / 'tools/vendor.py')
 vendor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vendor)
@@ -43,7 +43,7 @@ class Installer(unittest.TestCase):
         (self.root/'web').mkdir()
         self.pins = {'media-chrome':'4.19.2', 'pdfjs-dist':'6.3.289'}
         (self.root/'package.json').write_text(json.dumps({'dependencies':self.pins}))
-        (self.root/'web/preview.js').write_text('/vendor/media-chrome-4.19.2/ /vendor/pdfjs-6.3.289/')
+        (self.root/'web/preview.js').write_text('/_mori/vendor/media-chrome-4.19.2/ /_mori/vendor/pdfjs-6.3.289/')
         self.data = {
             'media-chrome':archive({'LICENSE':'test license', 'dist/iife/index.js':'test media', 'dist/surprise.js':'skip'}),
             'pdfjs-dist':archive({'LICENSE':'test license', 'legacy/build/pdf.min.mjs':'test pdf', 'legacy/build/pdf.worker.min.mjs':'test worker', 'cmaps/test.bcmap':'test cmap', 'wasm/test.wasm':'test wasm', '../escape.js':'never extract', 'legacy/build/pdf.js':'skip'}),
@@ -77,7 +77,7 @@ class Installer(unittest.TestCase):
         with patch.object(vendor,'fetch',damaged), self.assertRaisesRegex(RuntimeError,'integrity mismatch'): vendor.main()
         self.assertFalse((self.root/'web/vendor').exists())
     def test_reject_loader_version_mismatch(self):
-        (self.root/'web/preview.js').write_text('/vendor/old-version/')
+        (self.root/'web/preview.js').write_text('/_mori/vendor/old-version/')
         with self.assertRaisesRegex(SystemExit,'Update the LIB paths'): vendor.main()
     def test_reject_registry_redirection(self):
         fetch = self.fetch

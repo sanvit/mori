@@ -39,7 +39,7 @@ func TestPDFInlineDeliveryHeaders(t *testing.T) {
 						if partial {
 							headers.Set("Range", "bytes=0-4")
 						}
-						w := call(a, method, "/api/object?"+q.Encode(), headers)
+						w := call(a, method, "/_mori/api/object?"+q.Encode(), headers)
 						typ, disposition := w.Header().Get("Content-Type"), w.Header().Get("Content-Disposition")
 						if mode == "presigned" && method == "GET" {
 							if w.Code != 307 {

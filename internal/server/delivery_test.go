@@ -22,7 +22,7 @@ func TestDeliveryModesIndependentAndNoClientOverride(t *testing.T) {
 				a.store = a.s3
 				for _, download := range []bool{false, true} {
 					mode := previewMode
-					target := "/api/object?key=README.md&mode=presigned"
+					target := "/_mori/api/object?key=README.md&mode=presigned"
 					if download {
 						mode = downloadMode
 						target += "&download=1"
@@ -68,15 +68,15 @@ func TestPresignOnlyGetObjectNotHeadOrListing(t *testing.T) {
 		}
 	}
 	for _, suffix := range []string{"", "&download=1"} {
-		w := call(a, "HEAD", "/api/object?key=README.md"+suffix, nil)
+		w := call(a, "HEAD", "/_mori/api/object?key=README.md"+suffix, nil)
 		if w.Code != 200 || w.Header().Get("Location") != "" || w.Header().Get("X-Delivery-Mode") != "proxy" || w.Header().Get("Content-Length") != "40" || w.Body.Len() != 0 {
 			t.Fatal("HEAD was not server-side", w.Code, w.Header(), w.Body.String())
 		}
-		if w := call(a, "GET", "/api/object?key=README.md"+suffix, nil); w.Code != 307 {
+		if w := call(a, "GET", "/_mori/api/object?key=README.md"+suffix, nil); w.Code != 307 {
 			t.Fatal(w.Code)
 		}
 	}
-	w := call(a, "GET", "/api/list", nil)
+	w := call(a, "GET", "/_mori/api/list", nil)
 	if w.Code != 200 || w.Header().Get("Location") != "" || !strings.Contains(w.Body.String(), "README.md") || strings.Contains(w.Body.String(), "X-Amz-") {
 		t.Fatal("listing was presigned", w.Code, w.Body.String())
 	}

@@ -1,14 +1,14 @@
 """DOM/interaction checks with test-only fetch fixtures; no browser-network E2E.
-Requires Playwright + Chromium. Run python3 tests/ui_smoke.py.
+Requires Playwright + Chromium. Run python3 -m tests.ui.ui_smoke.
 """
 from pathlib import Path
 import os
 import shutil
 from playwright.sync_api import sync_playwright, expect
 
-root = Path(__file__).resolve().parents[1]
-html = (root/'web/index.html').read_text().replace('<script src="/app.js" defer></script>', '').replace('<script src="/preview.js" defer></script>', '').replace('<link rel="stylesheet" href="/preview.css">', '').replace('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', '')
-html = html.replace('<link rel="stylesheet" href="/styles.css">', '<style>'+(root/'web/styles.css').read_text()+'</style>')
+root = Path(__file__).resolve().parents[2]
+html = (root/'web/index.html').read_text().replace('<script src="/_mori/assets/app.js" defer></script>', '').replace('<script src="/_mori/assets/preview.js" defer></script>', '').replace('<link rel="stylesheet" href="/_mori/assets/preview.css">', '').replace('<link rel="icon" href="/_mori/assets/favicon.svg" type="image/svg+xml">', '')
+html = html.replace('<link rel="stylesheet" href="/_mori/assets/styles.css">', '<style>'+(root/'web/styles.css').read_text()+'</style>')
 errors = []
 with sync_playwright() as p:
     options={'headless':True, 'args':['--no-sandbox']}
@@ -23,13 +23,13 @@ with sync_playwright() as p:
       HTMLAnchorElement.prototype.click = function() { downloads.push({href:this.getAttribute('href'), name:this.download}); };
       globalThis.fetch = async (url, options={}) => {
         calls.push({url, method:options.method || 'GET', body:options.body, headers:options.headers});
-        if (url.startsWith('/api/config')) return new Response(JSON.stringify({title:'Files',zipMaxFiles:4,zipMaxBytes:1073741824,downloadMode:'presigned',previewMode:'proxy'}));
-        if (url === '/api/archive') {
+        if (url.startsWith('/_mori/api/config')) return new Response(JSON.stringify({title:'Files',zipMaxFiles:4,zipMaxBytes:1073741824,downloadMode:'presigned',previewMode:'proxy'}));
+        if (url === '/_mori/api/archive') {
           if (mode === 'zip-error') return new Response(JSON.stringify({message:'선택한 파일의 합계가 서버의 ZIP 용량 제한을 넘었습니다.'}),{status:413});
           if (mode === 'zip-wait') return new Promise((resolve, reject) => {
             options.signal.addEventListener('abort', () => reject(new DOMException('Aborted','AbortError')), {once:true});
           });
-          return new Response(JSON.stringify({url:'/api/archive?token='+'a'.repeat(43),filename:'files.zip',files:5}));
+          return new Response(JSON.stringify({url:'/_mori/api/archive?token='+'a'.repeat(43),filename:'files.zip',files:5}));
         }
         if (mode === 'error') return new Response(JSON.stringify({message:'S3 접근이 거부되었습니다.'}),{status:403});
         if (mode === 'empty') return new Response(JSON.stringify({entries:[],prefix:''}));
@@ -67,14 +67,14 @@ with sync_playwright() as p:
     page.locator('#download-zip').click()
     expect(page.locator('#notice')).to_contain_text('브라우저에서 확인')
     assert page.evaluate('downloads.length')==1
-    post=page.evaluate("calls.find(c=>c.url==='/api/archive')")
+    post=page.evaluate("calls.find(c=>c.url==='/_mori/api/archive')")
     import json
     payload=json.loads(post['body'])
     assert post['method']=='POST' and post['headers']['X-Mori-Request']=='1'
     assert payload['prefix']=='' and len(payload['keys'])==4 and 'documents/' in payload['keys']
     assert set(payload)=={'prefix','keys'}, 'Client submitted trusted-looking sizes'
-    assert page.evaluate('downloads[0].href').startswith('/api/archive?token=')
-    assert not page.evaluate("calls.some(c=>c.url.startsWith('/api/archive?'))"), 'ZIP body incorrectly fetched with JS'
+    assert page.evaluate('downloads[0].href').startswith('/_mori/api/archive?token=')
+    assert not page.evaluate("calls.some(c=>c.url.startsWith('/_mori/api/archive?'))"), 'ZIP body incorrectly fetched with JS'
     page.evaluate("mode='zip-error'")
     page.locator('#download-zip').click()
     expect(page.locator('#notice')).to_contain_text('용량 제한')
@@ -128,7 +128,7 @@ with sync_playwright() as p:
       globalThis.calls = [];
       globalThis.fetch = async (url, options={}) => {
         calls.push({url, method:options.method || 'GET'});
-        if (url.startsWith('/api/config')) return new Response(JSON.stringify({title:'Files',zipEnabled:false,zipMaxFiles:4,zipMaxBytes:1073741824,downloadMode:'proxy',previewMode:'proxy'}));
+        if (url.startsWith('/_mori/api/config')) return new Response(JSON.stringify({title:'Files',zipEnabled:false,zipMaxFiles:4,zipMaxBytes:1073741824,downloadMode:'proxy',previewMode:'proxy'}));
         return new Response(JSON.stringify({entries:[{key:'documents/',name:'documents',folder:true,size:0,modified:''},{key:'README.md',name:'README.md',folder:false,size:40,modified:'2026-09-09T06:00:00Z'}],prefix:''}));
       };
     }""")
@@ -138,11 +138,11 @@ with sync_playwright() as p:
     assert page.locator('input[type=checkbox], col.select-col, .select-cell').count()==0
     expect(page.locator('#selection-tools')).not_to_be_visible()
     assert page.locator('thead th').count()==page.locator('tbody tr.file-row td').count()==4
-    expect(page.locator('.file-row .download')).to_have_attribute('href', '/api/object?key=README.md&download=1')
+    expect(page.locator('.file-row .download')).to_have_attribute('href', '/_mori/api/object?key=README.md&download=1')
     page.evaluate("""() => { globalThis.fetch = async () => new Response(JSON.stringify({entries:[],prefix:'empty/'})); location.hash = '#/empty/'; }""")
     expect(page.locator('.message')).to_have_text('이 폴더는 비어 있습니다.')
     assert page.locator('.message').get_attribute('colspan')=='4'
-    assert not page.evaluate("calls.some(c => c.url.startsWith('/api/archive'))")
+    assert not page.evaluate("calls.some(c => c.url.startsWith('/_mori/api/archive'))")
     page.set_viewport_size({'width':390,'height':844})
     assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
     assert not errors,errors

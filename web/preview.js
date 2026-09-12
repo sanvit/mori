@@ -4,7 +4,7 @@
   const dialog = $('preview');
   const body = $('preview-body');
   const MAX_TEXT = 1024 * 1024;
-  const LIB = { media: '/vendor/media-chrome-4.19.2/index.js', pdf: '/vendor/pdfjs-6.3.289/pdf.mjs', worker: '/vendor/pdfjs-6.3.289/pdf.worker.mjs', base: '/vendor/pdfjs-6.3.289/' };
+  const LIB = { media: '/_mori/vendor/media-chrome-4.19.2/index.js', pdf: '/_mori/vendor/pdfjs-6.3.289/pdf.mjs', worker: '/_mori/vendor/pdfjs-6.3.289/pdf.worker.mjs', base: '/_mori/vendor/pdfjs-6.3.289/' };
   const kinds = {
     image: 'png jpg jpeg gif webp avif bmp ico',
     video: 'mp4 m4v webm ogv mov',
@@ -43,7 +43,7 @@
     return extKinds.get(base.includes('.') ? base.split('.').pop() : '') || 'unsupported';
   }
   function size(n) { if (!Number.isFinite(n) || n < 0) return ''; if (n < 1024) return n + ' B'; const p = Math.min(4, Math.floor(Math.log2(n) / 10)); return (n / 1024 ** p).toFixed(1) + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][p]; }
-  function objectURL(entry, download = false) { return '/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) }); }
+  function objectURL(entry, download = false) { return '/_mori/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) }); }
   function current(s) { return active === s && !s.abort.signal.aborted && dialog.open; }
   function cleanup() {
     const s = active; active = null;
@@ -86,7 +86,7 @@
     message(s, heading, '파일 형식과 연결 상태를 확인해 주세요.' + extra + ' 원본은 다운로드해서 열 수 있습니다.');
   }
   async function descriptor(s) {
-    const response = await fetch('/api/preview?' + new URLSearchParams({ key: s.entry.key }), { credentials: 'same-origin', cache: 'no-store', signal: s.abort.signal });
+    const response = await fetch('/_mori/api/preview?' + new URLSearchParams({ key: s.entry.key }), { credentials: 'same-origin', cache: 'no-store', signal: s.abort.signal });
     const value = await response.json();
     if (!response.ok) throw new Error('preview source unavailable');
     if (!['image', 'video', 'audio', 'pdf', 'text', 'unsupported'].includes(value.kind)) throw new Error('invalid preview type');
@@ -94,7 +94,7 @@
       const source = new URL(value.url, location.href);
       if (!['http:', 'https:'].includes(source.protocol) || source.username || source.password) throw new Error('invalid source');
       // Even a malformed helper response cannot forward the site's credentials.
-      if (value.mode !== 'presigned' && (source.origin !== location.origin || source.pathname !== '/api/object')) throw new Error('invalid proxy source');
+      if (value.mode !== 'presigned' && (source.origin !== location.origin || source.pathname !== '/_mori/api/object')) throw new Error('invalid proxy source');
     }
     return value;
   }

@@ -15,6 +15,12 @@ import (
 
 func (a *App) static(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if strings.HasPrefix(p, "/_mori/assets/") {
+		p = strings.TrimPrefix(p, "/_mori/assets")
+	}
+	if strings.HasPrefix(p, "/_mori/vendor/") {
+		p = strings.TrimPrefix(p, "/_mori")
+	}
 	if p == "/" {
 		p = "/index.html"
 	}

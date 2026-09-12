@@ -39,14 +39,31 @@ type Client struct {
 // itself is opened lazily on first use.
 func New(c config.SFTPConfig) (*Client, error) {
 	cfg := &ssh.ClientConfig{User: c.Username, Timeout: 15 * time.Second}
-	if c.KeyFile != "" {
-		pem, err := os.ReadFile(c.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("SFTP_KEY_FILE: %w", err)
+	if c.Key != "" && c.KeyFile != "" {
+		return nil, fmt.Errorf("set only one of SFTP_KEY and SFTP_KEY_FILE")
+	}
+	if c.HostKey != "" && c.KnownHosts != "" || c.InsecureHostKey && (c.HostKey != "" || c.KnownHosts != "") {
+		return nil, fmt.Errorf("choose one SFTP host verification setting")
+	}
+	if c.Key != "" || c.KeyFile != "" {
+		// Accept real newlines or literal backslash-n for single-line ENV values.
+		pem := []byte(strings.ReplaceAll(c.Key, `\n`, "\n"))
+		if c.KeyFile != "" {
+			var err error
+			pem, err = os.ReadFile(c.KeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("SFTP_KEY_FILE: unable to read private key file")
+			}
 		}
-		signer, err := ssh.ParsePrivateKey(pem)
+		var signer ssh.Signer
+		var err error
+		if c.KeyPassphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(pem, []byte(c.KeyPassphrase))
+		} else {
+			signer, err = ssh.ParsePrivateKey(pem)
+		}
 		if err != nil {
-			return nil, fmt.Errorf("SFTP_KEY_FILE: %w", err)
+			return nil, fmt.Errorf("invalid SFTP private key or passphrase; check SFTP_KEY/SFTP_KEY_FILE and SFTP_KEY_PASSPHRASE")
 		}
 		cfg.Auth = append(cfg.Auth, ssh.PublicKeys(signer))
 	}
@@ -55,6 +72,17 @@ func New(c config.SFTPConfig) (*Client, error) {
 	}
 	if c.InsecureHostKey {
 		cfg.HostKeyCallback = ssh.InsecureIgnoreHostKey() // #nosec G106 -- explicit operator opt-in
+	} else if c.HostKey != "" {
+		value := strings.TrimSpace(c.HostKey)
+		key, _, options, rest, err := ssh.ParseAuthorizedKey([]byte(value))
+		if err != nil || len(options) != 0 || len(strings.TrimSpace(string(rest))) != 0 || strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("SFTP_HOST_KEY must contain one OpenSSH public key: key-type base64-key [comment]")
+		}
+		if _, certificate := key.(*ssh.Certificate); certificate {
+			return nil, fmt.Errorf("SFTP_HOST_KEY requires a plain host public key, not a certificate")
+		}
+		cfg.HostKeyCallback = ssh.FixedHostKey(key)
+		cfg.HostKeyAlgorithms = hostKeyAlgorithms(key)
 	} else {
 		callback, err := knownhosts.New(c.KnownHosts)
 		if err != nil {
@@ -76,6 +104,21 @@ func (c *Client) remote(key string) string {
 		return "."
 	}
 	return p
+}
+
+func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var err error
+	if c.sftp != nil {
+		err = c.sftp.Close()
+		c.sftp = nil
+	}
+	if c.conn != nil {
+		err = errors.Join(err, c.conn.Close())
+		c.conn = nil
+	}
+	return err
 }
 func (c *Client) client(ctx context.Context) (*sftplib.Client, error) {
 	c.mu.Lock()
@@ -182,7 +225,7 @@ func (c *Client) List(ctx context.Context, prefix, cursor string) (backend.Listi
 			l.Entries = append(l.Entries, backend.Entry{Key: prefix + fi.Name() + "/", Name: fi.Name(), Folder: true, Type: "folder"})
 			continue
 		}
-		l.Entries = append(l.Entries, backend.Entry{Key: prefix + fi.Name(), Name: fi.Name(), Size: fi.Size(), Modified: fi.ModTime().UTC().Format(time.RFC3339), ETag: backend.VersionTag(fi.Size(), fi.ModTime()), Type: media.FileType(fi.Name())})
+		l.Entries = append(l.Entries, backend.Entry{Key: prefix + fi.Name(), Name: fi.Name(), Size: fi.Size(), Modified: fi.ModTime().UTC().Format(time.RFC3339), ETag: c.versionTag(prefix+fi.Name(), fi.Size(), fi.ModTime()), Type: media.FileType(fi.Name())})
 	}
 	return l, nil
 }
@@ -211,7 +254,7 @@ func (c *Client) Walk(ctx context.Context, prefix string, visit func(backend.Obj
 				queue = append(queue, key)
 				continue
 			}
-			if err := visit(backend.Object{Key: dir + fi.Name(), ETag: backend.VersionTag(fi.Size(), fi.ModTime()), Size: fi.Size(), Modified: fi.ModTime()}); err != nil {
+			if err := visit(backend.Object{Key: dir + fi.Name(), ETag: c.versionTag(dir+fi.Name(), fi.Size(), fi.ModTime()), Size: fi.Size(), Modified: fi.ModTime()}); err != nil {
 				return err
 			}
 		}
@@ -230,7 +273,7 @@ func (c *Client) Stat(ctx context.Context, key string) (backend.Object, error) {
 	}
 	obj := backend.Object{Key: key, Size: fi.Size(), Modified: fi.ModTime(), Directory: fi.IsDir()}
 	if !obj.Directory {
-		obj.ETag = backend.VersionTag(fi.Size(), fi.ModTime())
+		obj.ETag = c.versionTag(key, fi.Size(), fi.ModTime())
 	}
 	return obj, nil
 }
@@ -296,13 +339,19 @@ func knownAlgorithms(file, addr string) ([]string, error) {
 			if knownhosts.Normalize(h) != want {
 				continue
 			}
-			switch key.Type() {
-			case ssh.KeyAlgoRSA:
-				add(ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA)
-			default:
-				add(key.Type())
-			}
+			add(hostKeyAlgorithms(key)...)
 		}
 	}
 	return algorithms, nil
+}
+
+func hostKeyAlgorithms(key ssh.PublicKey) []string {
+	if key.Type() == ssh.KeyAlgoRSA {
+		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
+	}
+	return []string{key.Type()}
+}
+
+func (c *Client) versionTag(key string, size int64, modified time.Time) string {
+	return backend.VersionTag(fmt.Sprintf("sftp:%q:%q:%q", c.cfg.Addr, c.cfg.Username, c.cfg.Root), key, size, modified)
 }

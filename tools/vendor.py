@@ -61,7 +61,7 @@ def main() -> None:
     js = (ROOT / 'web/preview.js').read_text()
     for name, version in pins.items():
         dirname = ('pdfjs' if name == 'pdfjs-dist' else name) + '-' + version
-        if '/vendor/' + dirname + '/' not in js:
+        if '/_mori/vendor/' + dirname + '/' not in js:
             raise SystemExit(f'Update the LIB paths in web/preview.js for {name}@{version} first.')
     if verify(pins) and not args.force:
         print('Verified local preview assets:', ', '.join(f'{k}@{v}' for k,v in pins.items()))

@@ -3,7 +3,7 @@
 Requires `make assets`, Go, test requirements and Chromium. ffmpeg is optional
 for a real WebM playback check. Unlike preview_dom.py, this suite does NOT replace
 fetch, media elements or library imports. Failure/skip must not count as a pass.
-Run python3 tests/preview_e2e.py on a machine permitting local browser navigation.
+Run python3 -m tests.e2e.preview_e2e on a machine permitting local browser navigation.
 """
 from pathlib import Path
 import base64
@@ -21,7 +21,7 @@ import wave
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from itertools import product
 from playwright.sync_api import sync_playwright, expect
-import http_e2e as fixture
+from tests.fixtures import s3 as fixture
 
 
 def simple_pdf():
@@ -93,12 +93,12 @@ def main():
                 for mode,scripts,external in product(('proxy','presigned'), (False,True), (False,True)):
                     port=fixture.free_port(); base=f'http://127.0.0.1:{port}'
                     env={k:v for k,v in os.environ.items() if not k.startswith(('BROWSER_','S3_'))}
-                    env.update(BROWSER_LISTEN_ADDR=f'127.0.0.1:{port}',BROWSER_USERNAME='tester',BROWSER_PASSWORD='test-browser-password',BROWSER_PUBLIC='false',BROWSER_PREVIEW_MODE=mode,BROWSER_HTML_PREVIEW_ENABLED='true',BROWSER_HTML_PREVIEW_SCRIPTS=str(scripts).lower(),BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES=str(external).lower(),BROWSER_DOWNLOAD_MODE='proxy',BROWSER_PROXY_URL='',S3_ENDPOINT=f'http://127.0.0.1:{origin.server_port}',S3_REGION='ap-northeast-2',S3_BUCKET='test-bucket',S3_PREFIX='public/',S3_FORCE_PATH_STYLE='true',S3_ACCESS_KEY_ID='TESTACCESS',S3_SECRET_ACCESS_KEY='test-secret-key')
+                    env.update(BROWSER_LISTEN_ADDR=f'127.0.0.1:{port}',BROWSER_USERNAME='tester',BROWSER_PASSWORD='test-browser-password',BROWSER_PUBLIC='false',BROWSER_PREVIEW_MODE=mode,BROWSER_HTML_PREVIEW_ENABLED='true',BROWSER_HTML_PREVIEW_SCRIPTS=str(scripts).lower(),BROWSER_HTML_PREVIEW_EXTERNAL_RESOURCES=str(external).lower(),BROWSER_DOWNLOAD_MODE='proxy',S3_ENDPOINT=f'http://127.0.0.1:{origin.server_port}',S3_REGION='ap-northeast-2',S3_BUCKET='test-bucket',S3_PREFIX='public/',S3_FORCE_PATH_STYLE='true',S3_ACCESS_KEY_ID='TESTACCESS',S3_SECRET_ACCESS_KEY='test-secret-key')
                     process=subprocess.Popen([str(binary)],cwd=tmp,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
                     try:
                         for _ in range(100):
                             try:
-                                urllib.request.urlopen(base+'/healthz',timeout=.2).close();break
+                                urllib.request.urlopen(base+'/_mori/healthz',timeout=.2).close();break
                             except OSError: time.sleep(.05)
                         else: raise RuntimeError('mori did not start')
                         context=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,device_scale_factor=3,http_credentials={'username':'tester','password':'test-browser-password','origin':base})

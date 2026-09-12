@@ -43,25 +43,25 @@ make run
 # 또는 make build -> bin/mori
 ```
 
-생성 파일은 `web/vendor/`에 있고 `manifest.json`에 패키지 무결성과 파일 SHA-256을 기록합니다. PDF.js worker, CMap, WASM 및 표준 폰트 데이터도 이 빌드 단계에서 가져옵니다. 실행 시에는 Go 바이너리에 임베드한 파일을 **같은 서버의 `/vendor/` 경로**에서 제공하며 외부 CDN, Node/Python 서버가 필요 없습니다. 파일 미리보기를 열 때 필요한 엔진만 지연 로드합니다. 외부 S3 직접 요청은 `presigned` 모드의 파일 본문 접근에만 사용합니다.
+생성 파일은 `web/vendor/`에 있고 `manifest.json`에 패키지 무결성과 파일 SHA-256을 기록합니다. PDF.js worker, CMap, WASM 및 표준 폰트 데이터도 이 빌드 단계에서 가져옵니다. 실행 시에는 Go 바이너리에 임베드한 파일을 **같은 서버의 `/_mori/vendor/` 경로**에서 제공하며 외부 CDN, Node/Python 서버가 필요 없습니다. 파일 미리보기를 열 때 필요한 엔진만 지연 로드합니다. 외부 S3 직접 요청은 `presigned` 모드의 파일 본문 접근에만 사용합니다.
 
 인터넷이 차단된 환경은 네트워크가 가능한 빌드 환경에서 이미지를 만든 뒤 옮기세요. `go run ./cmd/mori`만 하고 assets를 준비하지 않으면 서버는 경고를 내며 목록/다운로드는 동작하나, Media Chrome 대신 기본 재생 컨트롤이 나오고 PDF.js 미리보기는 사용할 수 없습니다. 의도치 않은 불완전 빌드를 피하려면 `make build` 또는 Dockerfile을 사용하세요.
 
 ## 기존 전달 방식 유지
 
 ```dotenv
-BROWSER_PROXY_URL=
+CACHE_MODE=internal
 BROWSER_DOWNLOAD_MODE=presigned
 BROWSER_PREVIEW_MODE=proxy
 BROWSER_PRESIGN_TTL=15m
 ```
 
-- `proxy`: `/api/object`를 통해 mori가 중계합니다. `BROWSER_PROXY_URL`이 비어 있으면 직접 S3, 값이 있으면 선택 캐시를 이용합니다.
-- `presigned`: `/api/preview`가 인증 후 **GetObject GET URL**을 JSON으로 발급하고 뷰어가 S3에서 직접 읽습니다. PDF Range 요청도 같은 GET URL을 사용합니다. 브라우저 인증 정보를 S3에 넘기지 않습니다.
+- `proxy`: `/_mori/api/object`를 통해 mori가 중계합니다. 기본 internal에서는 저장소 공통 내장 캐시, off에서는 원본을 이용합니다.
+- `presigned`: `/_mori/api/preview`가 인증 후 **GetObject GET URL**을 JSON으로 발급하고 뷰어가 S3에서 직접 읽습니다. PDF Range 요청도 같은 GET URL을 사용합니다. 브라우저 인증 정보를 S3에 넘기지 않습니다.
 
-새 `/api/preview`는 URL을 준비할 뿐 S3 HEAD·목록·파일 본문을 읽지 않습니다. 응답은 `private, no-store`입니다. URL은 목록에 미리 서명하지 않으며 history/주소 표시줄/로컬 스토리지에 저장하지 않습니다. 사용자에게 접근 권한이 있는 서명 URL인 만큼 개발자 도구나 네트워크 로그에서는 확인할 수 있고, 유효기간 동안 공유받은 사람도 사용할 수 있습니다.
+새 `/_mori/api/preview`는 URL을 준비할 뿐 S3 HEAD·목록·파일 본문을 읽지 않습니다. 응답은 `private, no-store`입니다. URL은 목록에 미리 서명하지 않으며 history/주소 표시줄/로컬 스토리지에 저장하지 않습니다. 사용자에게 접근 권한이 있는 서명 URL인 만큼 개발자 도구나 네트워크 로그에서는 확인할 수 있고, 유효기간 동안 공유받은 사람도 사용할 수 있습니다.
 
-개별 다운로드의 `/api/object?download=1`과 원본 열기는 기존 GET/307 동작을 유지합니다. HEAD·목록·ZIP을 presign하지 않습니다. ZIP은 전달 모드에 관계없이 서버를 거쳐 무압축 스트리밍합니다. 재시도는 미리보기 URL을 새로 발급하지만 만료/오류를 이유로 모드를 자동 변경하거나 cache proxy로 우회하지 않습니다. 긴 영상은 나중의 Range 요청 시 URL이 만료될 수 있으므로 적절한 TTL을 설정하세요.
+개별 다운로드의 `/_mori/api/object?download=1`과 원본 열기는 기존 GET/307 동작을 유지합니다. HEAD·목록·ZIP을 presign하지 않습니다. ZIP은 전달 모드에 관계없이 서버를 거쳐 무압축 스트리밍합니다. 재시도는 미리보기 URL을 새로 발급하지만 만료/오류를 이유로 모드를 자동 변경하거나 cache proxy로 우회하지 않습니다. 긴 영상은 나중의 Range 요청 시 URL이 만료될 수 있으므로 적절한 TTL을 설정하세요.
 
 ## Presigned PDF/텍스트: S3 CORS
 
@@ -105,8 +105,8 @@ Chromium/WebKit에서 proxy 및 presigned 모드로 검증했습니다. Chromium
 앱 미리보기와 새 탭 모두 검사했습니다. 모바일 빈 목록 너비와 확대/닫기 처리는 DOM 검사로 확인했습니다.
 아이폰 실기기, WebKit 미디어 재생, 운영 저장소는 이번 검증 범위에 포함되지 않습니다.
 
-`python3 tests/preview_e2e.py`는 Chromium,
-`MORI_TEST_BROWSER=webkit python3 tests/preview_e2e.py`는 WebKit 검사입니다.
+`python3 -m tests.e2e.preview_e2e`는 Chromium,
+`MORI_TEST_BROWSER=webkit python3 -m tests.e2e.preview_e2e`는 WebKit 검사입니다.
 
 ### HTML 렌더링 및 PDF 스크롤
 

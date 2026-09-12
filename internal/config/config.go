@@ -11,20 +11,23 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"mori/internal/objectcache"
 )
 
 type Config struct {
+	ServeMode, CacheMode, HealthPath                                          string
+	ObjectCache                                                               objectcache.Config
 	Listen, Title, Bucket, Region, Prefix, AccessKey, SecretKey, SessionToken string
-	Endpoint, Proxy                                                           *url.URL
+	Endpoint                                                                  *url.URL
 	// BasePath (STORAGE_BASE_PATH) is the folder published as the browser
 	// root, relative to the backend root. It is "" or ends with "/". For S3 it
-	// is already folded into Prefix; ProxyPrefix is the part the cache proxy
-	// does not add itself, since s3-proxy applies S3_PREFIX on its own.
-	BasePath, ProxyPrefix           string
+	// is already folded into Prefix.
+	BasePath                        string
 	PathStyle, Public, CacheEnabled bool
-	ProxyHealthPath                 string
 	Username, Password              string
 	ListingTTL                      time.Duration
+	ShutdownTimeout                 time.Duration
 	ListingMax                      int
 	DownloadMode, PreviewMode       string
 	PresignTTL                      time.Duration
@@ -41,7 +44,8 @@ type Config struct {
 	// The zero value keeps ZIP enabled, matching the default.
 	ZipDisabled bool
 	// Backend selects the storage: s3 (default), webdav, ftp, or sftp. The S3
-	// fields above, the caching proxy, and presigned delivery apply to s3 only.
+	// fields above and presigned delivery apply to
+	// s3 only. The internal object cache supports every backend.
 	Backend string
 	WebDAV  WebDAVConfig
 	FTP     FTPConfig
@@ -61,9 +65,11 @@ type FTPConfig struct {
 }
 
 // SFTPConfig targets host:port with password and/or private-key auth. The host
-// key is verified against KnownHosts unless InsecureHostKey is set explicitly.
+// key is pinned by HostKey or verified against KnownHosts, unless
+// InsecureHostKey is set explicitly. Key contains inline OpenSSH/PEM text.
 type SFTPConfig struct {
 	Addr, Username, Password, KeyFile, KnownHosts, Root string
+	Key, KeyPassphrase, HostKey                         string
 	InsecureHostKey                                     bool
 }
 
@@ -148,10 +154,23 @@ func endpoint(v, name string) (*url.URL, error) {
 // Read builds a Config from the process environment and validates it.
 func Read() (Config, error) {
 	c := Config{Listen: Env("BROWSER_LISTEN_ADDR", ":8080"), Title: Env("BROWSER_TITLE", "Files"), Bucket: Env("S3_BUCKET", ""), Region: Env("S3_REGION", "ap-northeast-2"), AccessKey: Env("S3_ACCESS_KEY_ID", ""), SecretKey: Env("S3_SECRET_ACCESS_KEY", ""), SessionToken: Env("S3_SESSION_TOKEN", ""), Username: Env("BROWSER_USERNAME", ""), Password: Env("BROWSER_PASSWORD", ""), ListingMax: 512}
-	c.ProxyHealthPath = Env("HEALTH_PATH", "/healthz")
 	var err error
+	if err = readServeMode(&c); err != nil {
+		return c, err
+	}
 	if c.Public, err = envBool("BROWSER_PUBLIC", false); err != nil {
 		return c, err
+	}
+	switch Env("AUTH_MODE", "") {
+	case "":
+	case "public":
+		c.Public = true
+		c.Username = ""
+		c.Password = ""
+	case "basic":
+		c.Public = false
+	default:
+		return c, fmt.Errorf("AUTH_MODE must be basic or public")
 	}
 	if c.HTMLPreviewEnabled, err = envBool("BROWSER_HTML_PREVIEW_ENABLED", false); err != nil {
 		return c, err
@@ -167,6 +186,9 @@ func Read() (Config, error) {
 	}
 	if c.CacheEnabled, err = envBool("CACHE_ENABLED", true); err != nil {
 		return c, err
+	}
+	if c.ShutdownTimeout, err = time.ParseDuration(Env("SHUTDOWN_TIMEOUT", "30s")); err != nil || c.ShutdownTimeout <= 0 || c.ShutdownTimeout > 24*time.Hour {
+		return c, fmt.Errorf("SHUTDOWN_TIMEOUT must be a positive duration up to 24h")
 	}
 	if c.ListingTTL, err = time.ParseDuration(Env("BROWSER_LIST_TTL", "30s")); err != nil || c.ListingTTL < 0 || c.ListingTTL > 24*time.Hour {
 		return c, fmt.Errorf("BROWSER_LIST_TTL must be a duration between 0s and 24h")
@@ -210,7 +232,6 @@ func Read() (Config, error) {
 		switch c.Backend {
 		case "s3":
 			c.Prefix += c.BasePath
-			c.ProxyPrefix = c.BasePath
 			if len(c.Prefix) > 512 {
 				return c, fmt.Errorf("S3_PREFIX and STORAGE_BASE_PATH together must be at most 512 bytes")
 			}
@@ -229,9 +250,6 @@ func Read() (Config, error) {
 		if c.DownloadMode == "presigned" || c.PreviewMode == "presigned" {
 			return c, fmt.Errorf("presigned delivery modes require STORAGE_BACKEND=s3")
 		}
-		if Env("BROWSER_PROXY_URL", "") != "" {
-			return c, fmt.Errorf("BROWSER_PROXY_URL only applies to STORAGE_BACKEND=s3")
-		}
 	}
 	zipEnabled, err := envBool("BROWSER_ZIP_ENABLED", true)
 	if err != nil {
@@ -246,6 +264,9 @@ func Read() (Config, error) {
 	}
 	if c.ZipMaxBytes, err = byteSize(Env("BROWSER_ZIP_MAX_SIZE", "20GiB")); err != nil || c.ZipMaxBytes < 1 || c.ZipMaxBytes > 1<<50 {
 		return c, fmt.Errorf("BROWSER_ZIP_MAX_SIZE must be a positive integer size up to 1PiB, e.g. 20GiB")
+	}
+	if err = readObjectOptions(&c); err != nil {
+		return c, err
 	}
 	return c, nil
 }
@@ -293,11 +314,6 @@ func readS3(c *Config) error {
 	if c.Endpoint, err = endpoint(Env("S3_ENDPOINT", "https://s3."+c.Region+".amazonaws.com"), "S3_ENDPOINT"); err != nil {
 		return err
 	}
-	if p := Env("BROWSER_PROXY_URL", ""); p != "" {
-		if c.Proxy, err = endpoint(p, "BROWSER_PROXY_URL"); err != nil {
-			return err
-		}
-	}
 	if p := Env("BROWSER_PRESIGN_ENDPOINT", ""); p != "" {
 		if c.PresignEndpoint, err = endpoint(p, "BROWSER_PRESIGN_ENDPOINT"); err != nil {
 			return err
@@ -342,15 +358,28 @@ func readSFTP(c *Config) error {
 		return err
 	}
 	c.SFTP.Username, c.SFTP.Password, c.SFTP.KeyFile = Env("SFTP_USERNAME", ""), Env("SFTP_PASSWORD", ""), Env("SFTP_KEY_FILE", "")
-	if c.SFTP.Username == "" || (c.SFTP.Password == "" && c.SFTP.KeyFile == "") {
-		return fmt.Errorf("SFTP_USERNAME and SFTP_PASSWORD or SFTP_KEY_FILE are required")
+	c.SFTP.Key, c.SFTP.KeyPassphrase, c.SFTP.HostKey = Env("SFTP_KEY", ""), Env("SFTP_KEY_PASSPHRASE", ""), Env("SFTP_HOST_KEY", "")
+	if c.SFTP.Key != "" && c.SFTP.KeyFile != "" {
+		return fmt.Errorf("set only one of SFTP_KEY and SFTP_KEY_FILE")
+	}
+	if c.SFTP.KeyPassphrase != "" && c.SFTP.Key == "" && c.SFTP.KeyFile == "" {
+		return fmt.Errorf("SFTP_KEY_PASSPHRASE requires SFTP_KEY or SFTP_KEY_FILE")
+	}
+	if c.SFTP.Username == "" || (c.SFTP.Password == "" && c.SFTP.KeyFile == "" && c.SFTP.Key == "") {
+		return fmt.Errorf("SFTP_USERNAME and SFTP_PASSWORD, SFTP_KEY, or SFTP_KEY_FILE are required")
 	}
 	c.SFTP.KnownHosts = Env("SFTP_KNOWN_HOSTS", "")
+	if c.SFTP.HostKey != "" && c.SFTP.KnownHosts != "" {
+		return fmt.Errorf("set only one of SFTP_HOST_KEY and SFTP_KNOWN_HOSTS")
+	}
 	if c.SFTP.InsecureHostKey, err = envBool("SFTP_INSECURE_HOST_KEY", false); err != nil {
 		return err
 	}
-	if c.SFTP.KnownHosts == "" && !c.SFTP.InsecureHostKey {
-		return fmt.Errorf("set SFTP_KNOWN_HOSTS to a known_hosts file, or explicitly set SFTP_INSECURE_HOST_KEY=true to skip host key verification")
+	if c.SFTP.InsecureHostKey && (c.SFTP.HostKey != "" || c.SFTP.KnownHosts != "") {
+		return fmt.Errorf("SFTP_INSECURE_HOST_KEY conflicts with SFTP_HOST_KEY or SFTP_KNOWN_HOSTS")
+	}
+	if c.SFTP.KnownHosts == "" && c.SFTP.HostKey == "" && !c.SFTP.InsecureHostKey {
+		return fmt.Errorf("set SFTP_HOST_KEY or SFTP_KNOWN_HOSTS, or explicitly set SFTP_INSECURE_HOST_KEY=true to skip host key verification")
 	}
 	if c.SFTP.Root, err = rootPath(Env("SFTP_PATH", "."), "SFTP_PATH"); err != nil {
 		return err

@@ -14,8 +14,8 @@ import (
 // arguments, which appear as environment variables during `go test`.
 func isolateEnv(t *testing.T) {
 	t.Helper()
-	prefixes := []string{"STORAGE_", "BROWSER_", "S3_", "WEBDAV_", "FTP_", "SFTP_"}
-	exact := map[string]bool{"CACHE_ENABLED": true, "HEALTH_PATH": true, "SHUTDOWN_TIMEOUT": true}
+	prefixes := []string{"STORAGE_", "BROWSER_", "S3_", "WEBDAV_", "FTP_", "SFTP_", "CACHE_", "SPA_", "ORIGIN_", "ERROR_"}
+	exact := map[string]bool{"SERVE_MODE": true, "AUTH_MODE": true, "INDEX_DOCUMENT": true, "LISTEN_ADDR": true, "ACCESS_LOG": true, "HEALTH_PATH": true, "SHUTDOWN_TIMEOUT": true}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		match := exact[k]
@@ -106,7 +106,6 @@ func TestConfigRequiresBucketWithoutFallback(t *testing.T) {
 	t.Setenv("S3_SECRET_ACCESS_KEY", "")
 	t.Setenv("S3_SESSION_TOKEN", "")
 	t.Setenv("S3_ENDPOINT", "https://s3.ap-northeast-2.amazonaws.com")
-	t.Setenv("BROWSER_PROXY_URL", "")
 	c, e := Read()
 	if e != nil || c.Endpoint == nil || c.Bucket != "test-bucket" {
 		t.Fatalf("valid config rejected: %+v %v", c, e)
@@ -178,11 +177,6 @@ func TestBackendSelection(t *testing.T) {
 		t.Fatal("presigned mode accepted without S3")
 	}
 	t.Setenv("BROWSER_PREVIEW_MODE", "proxy")
-	t.Setenv("BROWSER_PROXY_URL", "http://cache:8080")
-	if _, err = Read(); err == nil {
-		t.Fatal("cache proxy accepted without S3")
-	}
-	t.Setenv("BROWSER_PROXY_URL", "")
 
 	t.Setenv("STORAGE_BACKEND", "ftp")
 	if _, err = Read(); err == nil {
@@ -233,13 +227,13 @@ func TestStorageBasePath(t *testing.T) {
 	t.Setenv("S3_PREFIX", "public")
 	t.Setenv("STORAGE_BASE_PATH", "/team/한글 docs/")
 	c, err := Read()
-	if err != nil || c.BasePath != "team/한글 docs/" || c.Prefix != "public/team/한글 docs/" || c.ProxyPrefix != "team/한글 docs/" {
-		t.Fatalf("%q %q %q %v", c.BasePath, c.Prefix, c.ProxyPrefix, err)
+	if err != nil || c.BasePath != "team/한글 docs/" || c.Prefix != "public/team/한글 docs/" {
+		t.Fatalf("%q %q %v", c.BasePath, c.Prefix, err)
 	}
 	t.Setenv("S3_PREFIX", "")
 	t.Setenv("STORAGE_BASE_PATH", "team")
-	if c, err = Read(); err != nil || c.Prefix != "team/" || c.ProxyPrefix != "team/" {
-		t.Fatalf("%q %q %v", c.Prefix, c.ProxyPrefix, err)
+	if c, err = Read(); err != nil || c.Prefix != "team/" {
+		t.Fatalf("%q %v", c.Prefix, err)
 	}
 	for _, bad := range []string{"../etc", "a/../b", "a/./b", "a//b", "a\\b", "a\x1bb", strings.Repeat("x", 600)} {
 		t.Setenv("STORAGE_BASE_PATH", bad)
@@ -249,7 +243,7 @@ func TestStorageBasePath(t *testing.T) {
 	}
 	for _, empty := range []string{"", "/", " // "} {
 		t.Setenv("STORAGE_BASE_PATH", empty)
-		if c, err = Read(); err != nil || c.BasePath != "" || c.Prefix != "" || c.ProxyPrefix != "" {
+		if c, err = Read(); err != nil || c.BasePath != "" || c.Prefix != "" {
 			t.Fatalf("%q: %q %q %v", empty, c.BasePath, c.Prefix, err)
 		}
 	}
@@ -258,7 +252,7 @@ func TestStorageBasePath(t *testing.T) {
 	t.Setenv("STORAGE_BASE_PATH", "shared/reports/")
 	t.Setenv("STORAGE_BACKEND", "webdav")
 	t.Setenv("WEBDAV_URL", "https://dav.example.test/remote.php/dav/")
-	if c, err = Read(); err != nil || c.WebDAV.URL.Path != "/remote.php/dav/shared/reports/" || c.Prefix != "" || c.ProxyPrefix != "" {
+	if c, err = Read(); err != nil || c.WebDAV.URL.Path != "/remote.php/dav/shared/reports/" || c.Prefix != "" {
 		t.Fatalf("%+v %v", c.WebDAV.URL, err)
 	}
 	t.Setenv("WEBDAV_URL", "https://dav.example.test")

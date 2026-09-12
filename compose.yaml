@@ -1,7 +1,5 @@
-# Standalone: only mori runs. Storage (S3 by default; WebDAV/FTP/SFTP via
-# STORAGE_BACKEND) is contacted directly.
+# Single application with embedded caching for every storage backend.
 # cp .env.example .env, then set the storage settings and browser authentication.
-# An existing S3 object proxy can be configured with BROWSER_PROXY_URL.
 services:
   browser:
     build: .
@@ -9,11 +7,14 @@ services:
     env_file: .env
     environment:
       BROWSER_LISTEN_ADDR: ':8080'
-      # S3 only. Empty = mori connects to S3 itself. Not a required external service.
-      BROWSER_PROXY_URL: ${BROWSER_PROXY_URL:-}
+      CACHE_DIR: /cache
     ports:
       - '127.0.0.1:${BROWSER_PORT:-8080}:8080'
     read_only: true
+    volumes:
+      - object-cache:/cache
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
+volumes:
+  object-cache:

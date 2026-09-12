@@ -1,10 +1,12 @@
 package sftp
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
@@ -23,7 +25,7 @@ import (
 )
 
 // startServer runs an in-process SSH server exposing the SFTP subsystem.
-func startServer(t *testing.T) (addr string, hostKey ssh.PublicKey) {
+func startServer(t *testing.T, authorized ...ssh.PublicKey) (addr string, hostKey ssh.PublicKey) {
 	t.Helper()
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(priv)
@@ -40,6 +42,14 @@ func startServer(t *testing.T) (addr string, hostKey ssh.PublicKey) {
 	}}
 	cfg.AddHostKey(rsaSigner)
 	cfg.AddHostKey(signer)
+	cfg.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		for _, expected := range authorized {
+			if c.User() == "tester" && bytes.Equal(key.Marshal(), expected.Marshal()) {
+				return nil, nil
+			}
+		}
+		return nil, errors.New("denied")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +64,7 @@ func startServer(t *testing.T) (addr string, hostKey ssh.PublicKey) {
 			go func() {
 				sconn, chans, reqs, err := ssh.NewServerConn(nc, cfg)
 				if err != nil {
+					nc.Close()
 					return
 				}
 				defer sconn.Close()
@@ -85,6 +96,85 @@ func startServer(t *testing.T) (addr string, hostKey ssh.PublicKey) {
 	}()
 	return ln.Addr().String(), hostKey
 }
+
+func TestInlinePrivateKeyAndPinnedHostKey(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientKey, _ := ssh.NewPublicKey(pub)
+	addr, host := startServer(t, clientKey)
+	plain, _ := ssh.MarshalPrivateKey(priv, "test-only")
+	encrypted, _ := ssh.MarshalPrivateKeyWithPassphrase(priv, "test-only", []byte("test-passphrase"))
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("inline key works"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, key, passphrase string
+		file                  bool
+	}{
+		{"raw", string(pem.EncodeToMemory(plain)), "", false},
+		{"escaped", strings.ReplaceAll(string(pem.EncodeToMemory(plain)), "\n", `\n`), "", false},
+		{"encrypted", string(pem.EncodeToMemory(encrypted)), "test-passphrase", false},
+		{"file", string(pem.EncodeToMemory(plain)), "", true},
+		{"encrypted-file", string(pem.EncodeToMemory(encrypted)), "test-passphrase", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.SFTPConfig{Addr: addr, Username: "tester", Key: tc.key, KeyPassphrase: tc.passphrase, HostKey: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(host))), Root: root}
+			if tc.file {
+				cfg.KeyFile = filepath.Join(t.TempDir(), "key")
+				if err := os.WriteFile(cfg.KeyFile, []byte(cfg.Key), 0600); err != nil {
+					t.Fatal(err)
+				}
+				cfg.Key = ""
+			}
+			c, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			r, err := c.Open(context.Background(), "a.txt", 0, -1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			body, err := io.ReadAll(r)
+			if err != nil || string(body) != "inline key works" {
+				t.Fatal(string(body), err)
+			}
+		})
+	}
+	// The server offers RSA before ed25519; pinning must select the latter.
+	// A different ed25519 public key must still fail the handshake.
+	c, err := New(config.SFTPConfig{Addr: addr, Username: "tester", Key: string(pem.EncodeToMemory(plain)), HostKey: string(ssh.MarshalAuthorizedKey(clientKey)), Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err = c.List(context.Background(), "", ""); err == nil {
+		t.Fatal("wrong pinned server key accepted")
+	}
+	for _, value := range []string{"not-a-public-key", "SHA256:not-a-public-key", string(ssh.MarshalAuthorizedKey(host)) + string(ssh.MarshalAuthorizedKey(clientKey)), `command="false" ` + string(ssh.MarshalAuthorizedKey(host))} {
+		if _, err := New(config.SFTPConfig{HostKey: value}); err == nil {
+			t.Fatal("malformed host key accepted")
+		}
+	}
+	for _, phrase := range []string{"", "wrong-passphrase"} {
+		if _, err := New(config.SFTPConfig{Key: string(pem.EncodeToMemory(encrypted)), KeyPassphrase: phrase, HostKey: string(ssh.MarshalAuthorizedKey(host))}); err == nil || strings.Contains(err.Error(), "wrong-passphrase") || strings.Contains(err.Error(), "BEGIN OPENSSH") {
+			t.Fatal("invalid encrypted key accepted or secret exposed", err)
+		}
+	}
+	algorithms := hostKeyAlgorithms(&rsaPublicKeyForTest{})
+	if strings.Join(algorithms, ",") != "rsa-sha2-512,rsa-sha2-256,ssh-rsa" {
+		t.Fatal(algorithms)
+	}
+}
+
+// Only Type is used by hostKeyAlgorithms.
+type rsaPublicKeyForTest struct{ ssh.PublicKey }
+
+func (*rsaPublicKeyForTest) Type() string { return ssh.KeyAlgoRSA }
 
 func fixture(t *testing.T) (*Client, string, ssh.PublicKey) {
 	t.Helper()

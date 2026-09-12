@@ -1,5 +1,0 @@
-PASS standalone compiled HTTP integration (no cache proxy): download_mode='proxy' preview_mode='proxy', signed URL follow, server-side HEAD/list, recursive paginated ZIP paths/empty folders/Store/CRC/single-use
-PASS standalone compiled HTTP integration (no cache proxy): download_mode='presigned' preview_mode='proxy', signed URL follow, server-side HEAD/list, recursive paginated ZIP paths/empty folders/Store/CRC/single-use
-PASS standalone compiled HTTP integration (no cache proxy): download_mode='proxy' preview_mode='presigned', signed URL follow, server-side HEAD/list, recursive paginated ZIP paths/empty folders/Store/CRC/single-use
-PASS standalone compiled HTTP integration (no cache proxy): download_mode='presigned' preview_mode='presigned', signed URL follow, server-side HEAD/list, recursive paginated ZIP paths/empty folders/Store/CRC/single-use
-PASS standalone all four delivery combinations, in-process listing cache, recursive ZIP; signatures verified by botocore HTTP fixture

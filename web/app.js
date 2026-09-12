@@ -83,10 +83,10 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
   function fileURL(entry, download) {
-    return '/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) });
+    return '/_mori/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) });
   }
   async function api(route, params, signal) {
-    const response = await fetch('/api/' + route + '?' + new URLSearchParams(params || {}), { signal, cache: 'no-store', credentials: 'same-origin' });
+    const response = await fetch('/_mori/api/' + route + '?' + new URLSearchParams(params || {}), { signal, cache: 'no-store', credentials: 'same-origin' });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || `요청을 처리할 수 없습니다. (${response.status})`);
     return data;
@@ -272,7 +272,7 @@
     state.notice = state.entries.some(e => e.folder && state.selected.has(e.key)) ? '선택한 폴더의 하위 파일과 용량을 확인하고 있습니다.' : '';
     renderSelection();
     try {
-      const response = await fetch('/api/archive', {
+      const response = await fetch('/_mori/api/archive', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', 'X-Mori-Request': '1' },
         body: JSON.stringify({ prefix: state.prefix, keys })
@@ -280,7 +280,7 @@
       const data = await response.json().catch(() => ({}));
       if (controller !== state.zipController) return;
       if (!response.ok) throw new Error(data.message || 'ZIP 다운로드를 준비하지 못했습니다.');
-      if (typeof data.url !== 'string' || !/^\/api\/archive\?token=[A-Za-z0-9_-]{43}$/.test(data.url)) throw new Error('ZIP 다운로드 응답이 올바르지 않습니다.');
+      if (typeof data.url !== 'string' || !/^\/_mori\/api\/archive\?token=[A-Za-z0-9_-]{43}$/.test(data.url)) throw new Error('ZIP 다운로드 응답이 올바르지 않습니다.');
       const link = element('a');
       link.href = data.url; link.download = typeof data.filename === 'string' ? data.filename : 'files.zip';
       link.hidden = true; document.body.append(link); link.click(); link.remove();

@@ -14,10 +14,11 @@ COPY --from=assets /src/web/vendor web/vendor
 RUN go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/mori ./cmd/mori
 
 FROM alpine:3
-RUN apk add --no-cache ca-certificates && adduser -D -H -u 10001 app
+RUN apk add --no-cache ca-certificates && adduser -D -H -u 10001 app && mkdir /cache && chown 10001:10001 /cache
 COPY --from=build /out/mori /usr/local/bin/mori
 USER app
+ENV CACHE_DIR=/cache
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+  CMD ["/usr/local/bin/mori", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/mori"]
