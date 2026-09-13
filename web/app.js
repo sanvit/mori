@@ -282,9 +282,11 @@
       if (!response.ok) throw new Error(data.message || 'ZIP 다운로드를 준비하지 못했습니다.');
       if (typeof data.url !== 'string' || !/^\/_mori\/api\/archive\?token=[A-Za-z0-9_-]{43}$/.test(data.url)) throw new Error('ZIP 다운로드 응답이 올바르지 않습니다.');
       const link = element('a');
-      link.href = data.url; link.download = typeof data.filename === 'string' ? data.filename : 'files.zip';
+      // The server supplies Content-Disposition; a download attribute can prevent
+      // scripted ZIP downloads from starting in WebKit.
+      link.href = data.url;
       link.hidden = true; document.body.append(link); link.click(); link.remove();
-      state.notice = `${Number.isInteger(data.files) ? data.files + '개 파일 · ' : ''}ZIP 다운로드를 요청했습니다. 진행 상태는 브라우저에서 확인해 주세요.`;
+      state.notice = '';
     } catch (error) {
       if (controller !== state.zipController || error.name === 'AbortError') return;
       state.notice = error.message || 'ZIP 다운로드를 준비하지 못했습니다.';

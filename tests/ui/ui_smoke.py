@@ -29,7 +29,7 @@ with sync_playwright() as p:
           if (mode === 'zip-wait') return new Promise((resolve, reject) => {
             options.signal.addEventListener('abort', () => reject(new DOMException('Aborted','AbortError')), {once:true});
           });
-          return new Response(JSON.stringify({url:'/_mori/api/archive?token='+'a'.repeat(43),filename:'files.zip',files:5}));
+          return new Response(JSON.stringify({url:'/_mori/api/archive?token='+'a'.repeat(43),filename:'Files.zip',files:5}));
         }
         if (mode === 'error') return new Response(JSON.stringify({message:'S3 접근이 거부되었습니다.'}),{status:403});
         if (mode === 'empty') return new Response(JSON.stringify({entries:[],prefix:''}));
@@ -65,7 +65,7 @@ with sync_playwright() as p:
     sizes=page.locator('.file-row .size-cell').evaluate_all('(nodes)=>nodes.map(n=>parseInt(n.title))')
     assert sizes==sorted(sizes)
     page.locator('#download-zip').click()
-    expect(page.locator('#notice')).to_contain_text('브라우저에서 확인')
+    expect(page.locator('#notice')).to_be_empty()
     assert page.evaluate('downloads.length')==1
     post=page.evaluate("calls.find(c=>c.url==='/_mori/api/archive')")
     import json

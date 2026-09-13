@@ -27,6 +27,10 @@ type recursiveStats struct{ Lists, Heads, Gets atomic.Int32 }
 // Contract model: delimiter grouping happens BEFORE pagination. Without a
 // delimiter, every descendant is returned. Only test code creates these keys.
 func recursiveFixture(t *testing.T, data map[string]string, pageSize int) (*App, *recursiveStats) {
+	return recursiveFixtureAt(t, data, pageSize, "public/docs/")
+}
+
+func recursiveFixtureAt(t *testing.T, data map[string]string, pageSize int, listRoot string) (*App, *recursiveStats) {
 	t.Helper()
 	stats := new(recursiveStats)
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +38,7 @@ func recursiveFixture(t *testing.T, data map[string]string, pageSize int) (*App,
 		if q.Get("list-type") == "2" {
 			stats.Lists.Add(1)
 			prefix := q.Get("prefix")
-			if !strings.HasPrefix(prefix, "public/docs/") || q.Get("max-keys") != "1000" || q.Get("encoding-type") != "url" || r.URL.Path != "/test-bucket/" {
+			if !strings.HasPrefix(prefix, listRoot) || q.Get("max-keys") != "1000" || q.Get("encoding-type") != "url" || r.URL.Path != "/test-bucket/" {
 				t.Error("listing escaped requested scope", r.URL)
 			}
 			grouped := map[string]bool{}
@@ -166,6 +170,74 @@ func TestRecursiveZIPHierarchyEmptyFoldersAndScopes(t *testing.T) {
 		t.Fatal("GET used for folder marker or missing file", stats.Gets.Load())
 	}
 }
+
+func TestRecursiveZIPSpecialCharacterNames(t *testing.T) {
+	data := map[string]string{
+		"docs/space + folder/a + b.txt":  "nested",
+		"docs/a + b.txt":                 "direct",
+		"docs/part:one.txt":              "colon",
+		"docs/part^3Aone.txt":            "literal caret",
+		"docs/time:folder/next%file.txt": "nested colon",
+	}
+	a, _ := recursiveFixture(t, data, 2)
+	for _, tc := range []struct {
+		key, filename, member, content string
+	}{
+		{"docs/a + b.txt", "a + b.txt.zip", "a + b.txt", "direct"},
+		{"docs/space + folder/", "space + folder.zip", "space + folder/a + b.txt", "nested"},
+		{"docs/part:one.txt", "part^3Aone.txt.zip", "part^3Aone.txt", "colon"},
+		{"docs/part^3Aone.txt", "part^^3Aone.txt.zip", "part^^3Aone.txt", "literal caret"},
+		{"docs/time:folder/", "time^3Afolder.zip", "time^3Afolder/next%file.txt", "nested colon"},
+	} {
+		b, _ := json.Marshal(map[string]any{"prefix": "docs/", "keys": []string{tc.key}})
+		w := postArchive(a, string(b), nil)
+		if w.Code != 200 {
+			t.Fatalf("prepare %q: %d %s", tc.key, w.Code, w.Body.String())
+		}
+		var plan struct{ URL, Filename string }
+		if err := json.Unmarshal(w.Body.Bytes(), &plan); err != nil || plan.Filename != tc.filename {
+			t.Fatalf("plan %q: %+v %v", tc.key, plan, err)
+		}
+		got := inspectZIP(t, a, plan.URL)
+		if got[tc.member] != tc.content {
+			t.Fatalf("ZIP %q: %v", tc.key, got)
+		}
+	}
+}
+
+func TestRecursiveZIPTimeFoldersFromLiveRequest(t *testing.T) {
+	const prefix = "pi-continuum/2026-09-13/"
+	times := []string{"02:09", "10:23", "13:41", "13:58", "14:08", "14:21"}
+	data := map[string]string{}
+	for _, tm := range times {
+		data[prefix+tm+"/build.txt"] = tm
+	}
+	// The literal escaped spelling is a different source object.
+	data[prefix+"02:09/02^3A09.txt"] = "literal"
+	data[prefix+"02:09/02:09.txt"] = "colon"
+	a, _ := recursiveFixtureAt(t, data, 2, "public/"+prefix)
+	w := postArchive(a, `{"prefix":"pi-continuum/2026-09-13/","keys":["pi-continuum/2026-09-13/02:09/","pi-continuum/2026-09-13/10:23/","pi-continuum/2026-09-13/13:41/","pi-continuum/2026-09-13/13:58/","pi-continuum/2026-09-13/14:08/","pi-continuum/2026-09-13/14:21/"]}`, nil)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var plan struct{ URL, Filename string }
+	if err := json.Unmarshal(w.Body.Bytes(), &plan); err != nil || plan.Filename != "2026-09-13.zip" {
+		t.Fatal(plan, err)
+	}
+	got := inspectZIP(t, a, plan.URL)
+	if len(got) != len(times)+2 {
+		t.Fatal(got)
+	}
+	for _, tm := range times {
+		if got[strings.ReplaceAll(tm, ":", "^3A")+"/build.txt"] != tm {
+			t.Fatal(tm, got)
+		}
+	}
+	if got["02^3A09/02^^3A09.txt"] != "literal" || got["02^3A09/02^3A09.txt"] != "colon" {
+		t.Fatal(got)
+	}
+}
+
 func TestRecursiveZIPOver1000AndOneLevelListingIndependent(t *testing.T) {
 	data := map[string]string{"docs/a-first.txt": "a", "docs/z-last.txt": "z"}
 	for i := 0; i < 1005; i++ {
@@ -216,7 +288,6 @@ func TestRecursiveZIPUnsafeMissingAndConflictingPaths(t *testing.T) {
 	}{
 		{"traversal", map[string]string{"docs/sub/../escape": "x"}, []string{"docs/sub/"}, 400},
 		{"backslash", map[string]string{"docs/sub/a\\b": "x"}, []string{"docs/sub/"}, 400},
-		{"colon", map[string]string{"docs/sub/C:stream": "x"}, []string{"docs/sub/"}, 400},
 		{"slashslash", map[string]string{"docs/sub//x": "x"}, []string{"docs/sub/"}, 400},
 		{"nonempty-marker", map[string]string{"docs/sub/": "body"}, []string{"docs/sub/"}, 400},
 		{"missing", map[string]string{}, []string{"docs/sub/"}, 404},
@@ -348,7 +419,7 @@ func TestBasePathConfinesBrowserRoot(t *testing.T) {
 	w = postArchive(a, string(b), nil)
 	var plan struct{ URL, Filename string }
 	json.Unmarshal(w.Body.Bytes(), &plan)
-	if w.Code != 200 || plan.Filename != "files.zip" {
+	if w.Code != 200 || plan.Filename != "Test.zip" {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	got := inspectZIP(t, a, plan.URL)

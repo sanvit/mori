@@ -71,11 +71,13 @@ def main():
         'public/02-preview.pdf':simple_pdf(),
         'public/04-page.html':b'<h1 style="color: rgb(255, 0, 0)">Rendered HTML</h1><script>document.body.dataset.executed="yes"</script>',
         'public/03-image.png':base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOomLYKAANCAbkKDdeAAAAAAElFTkSuQmCC'),
+        'public/05-markdown.md':b'# Rendered Markdown\n\n**bold** and [guide](documents/guide.txt).\n\n![local](03-image.png) ![remote](https://outside.invalid/image.png)\n\n<script>window.mdRan=true</script>\n\n[unsafe](javascript:alert(1))\n',
     })
     fixture.DATA['public/04-page.html'] += f'<link rel="stylesheet" href="http://127.0.0.1:{resources.server_port}/style.css"><script src="http://127.0.0.1:{resources.server_port}/script.js"></script>'.encode()
     with tempfile.TemporaryDirectory(prefix='mori-preview-e2e-') as tmp:
-        binary=Path(tmp)/'mori'
-        subprocess.run(['go','build','-o',str(binary),'./cmd/mori'],cwd=fixture.ROOT,check=True)
+        binary=Path(os.environ['MORI_TEST_BINARY']) if os.getenv('MORI_TEST_BINARY') else Path(tmp)/'mori'
+        if not os.getenv('MORI_TEST_BINARY'):
+            subprocess.run(['go','build','-o',str(binary),'./cmd/mori'],cwd=fixture.ROOT,check=True)
         has_video=bool(shutil.which('ffmpeg'))
         if has_video:
             clip=Path(tmp)/'clip.webm'
@@ -146,7 +148,24 @@ def main():
                         if scripts and external: expect(original.locator('body')).to_have_attribute('data-external','yes')
                         else: expect(original.locator('body')).not_to_have_attribute('data-external','yes')
                         original.close(); close()
-                        open_file('README.md'); expect(page.locator('.preview-code')).to_contain_text('# mori');close()
+                        open_file('README.md')
+                        expect(page.locator('.markdown-content h1')).to_have_text('mori')
+                        expect(page.locator('.preview-code')).not_to_be_visible()
+                        page.locator('.markdown-mode').filter(has_text='원문').click()
+                        expect(page.locator('.preview-code')).to_contain_text('# mori')
+                        page.locator('.markdown-mode').filter(has_text='문서').click()
+                        expect(page.locator('.markdown-content')).to_be_visible()
+                        close()
+                        open_file('05-markdown.md')
+                        expect(page.locator('.markdown-content h1')).to_have_text('Rendered Markdown')
+                        expect(page.locator('.markdown-content strong')).to_have_text('bold')
+                        expect(page.locator('.markdown-content img')).to_have_count(1)
+                        expect(page.locator('.markdown-content img')).to_have_js_property('naturalWidth',1)
+                        assert 'key=03-image.png' in page.locator('.markdown-content img').get_attribute('src')
+                        assert 'key=documents%2Fguide.txt' in page.locator('.markdown-content a').get_attribute('href')
+                        assert page.locator('.markdown-content a[href^="javascript:"], .markdown-content script').count()==0
+                        assert not page.evaluate('!!window.mdRan')
+                        close()
                         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
                         assert not errors,errors
                         context.close()

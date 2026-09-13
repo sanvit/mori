@@ -84,6 +84,9 @@ fixtures=r'''() => {
       return task;
     }
   };
+  window.MARKDOWN_TEST_DOUBLE=class {
+    render(){ return '<h1>Hello, mori</h1><p>A simple place for your files.</p><script>window.unsafeExecuted=true</script><a href="javascript:alert(1)">bad</a><img src="https://outside.invalid/image.png" alt="outside">'; }
+  };
 }'''
 errors=[]
 with sync_playwright() as p:
@@ -99,6 +102,7 @@ with sync_playwright() as p:
     # Test-only injection at the module boundary; production file remains untouched.
     source=source.replace('import(LIB.pdf)','Promise.resolve(window.PDF_TEST_DOUBLE)')
     source=source.replace('import(LIB.media)',"Promise.reject(new Error('Test intentionally does not load Media Chrome'))")
+    source=source.replace('import(LIB.markdown)','Promise.resolve({default: window.MARKDOWN_TEST_DOUBLE})')
     page.add_script_tag(content=source)
     page.add_script_tag(content=(ROOT/'web/app.js').read_text())
     expect(page.locator('tr.file-row')).to_have_count(8)
@@ -155,11 +159,27 @@ with sync_playwright() as p:
     assert page.evaluate('lastImage.getAttribute("src")') is None
     expect(entry('01-mountains.jpg')).to_be_focused()
     open_file('05-README.md')
-    expect(page.locator('.preview-code')).to_contain_text('<img src=x')
-    assert page.locator('.preview-code img, .preview-code script').count()==0
+    expect(page.locator('.markdown-content h1')).to_have_text('Hello, mori')
+    expect(page.locator('.markdown-content')).to_be_visible()
+    expect(page.locator('.preview-code')).not_to_be_visible()
+    shot('markdown-document.png')
+    assert page.locator('.markdown-content img, .markdown-content script, .markdown-content a').count()==0
     assert not page.evaluate('!!window.unsafeExecuted')
+    page.set_viewport_size({'width':390,'height':844})
+    assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
+    shot('mobile-markdown-document.png')
+    page.set_viewport_size({'width':1360,'height':900})
+    page.locator('.markdown-mode').filter(has_text='원문').click()
+    expect(page.locator('.preview-code')).to_contain_text('<img src=x')
+    expect(page.locator('.markdown-content')).not_to_be_visible()
+    shot('markdown-source.png')
     page.locator('.text-toggle').click(); expect(page.locator('.preview-code')).to_have_class('preview-code wrap')
+    page.locator('.markdown-mode').filter(has_text='문서').click()
+    expect(page.locator('.markdown-content')).to_be_visible()
     assert page.evaluate('calls.filter(c=>c.url?.includes("/object?")).every(c=>c.credentials==="omit")')
+    close()
+    open_file('05-README.md')
+    expect(page.locator('.markdown-content')).to_be_visible()
     close()
     open_file('06-large.log')
     expect(page.locator('.text-tools')).to_contain_text('처음 1 MiB')

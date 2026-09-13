@@ -16,19 +16,23 @@ from tests.fixtures import s3 as source
 def main():
     from playwright.sync_api import sync_playwright, expect
     with tempfile.TemporaryDirectory(prefix='mori-e2e-') as tmp:
-        binary = Path(tmp) / 'mori'
-        subprocess.run(['go', 'build', '-o', str(binary), './cmd/mori'], cwd=source.ROOT, check=True)
+        binary = Path(os.environ['MORI_TEST_BINARY']) if os.getenv('MORI_TEST_BINARY') else Path(tmp) / 'mori'
+        if not os.getenv('MORI_TEST_BINARY'):
+            subprocess.run(['go', 'build', '-o', str(binary), './cmd/mori'], cwd=source.ROOT, check=True)
         fixture = ThreadingHTTPServer(('127.0.0.1', 0), source.S3Fixture)
         thread = threading.Thread(target=fixture.serve_forever, daemon=True)
         thread.start()
         fixture_url = f'http://127.0.0.1:{fixture.server_port}'
         try:
             with sync_playwright() as playwright:
+                browser_name = os.getenv('MORI_TEST_BROWSER', 'chromium')
                 executable = os.getenv('CHROMIUM_PATH') or shutil.which('chromium')
-                options = {'headless': True, 'args': ['--no-sandbox']}
+                options = {'headless': True}
+                if browser_name == 'chromium':
+                    options['args'] = ['--no-sandbox']
                 if executable:
                     options['executable_path'] = executable
-                browser = playwright.chromium.launch(**options)
+                browser = getattr(playwright, browser_name).launch(**options)
                 for download_mode, preview_mode in [('presigned', 'proxy'), ('proxy', 'presigned')]:
                     port = source.free_port()
                     base_url = f'http://127.0.0.1:{port}'
@@ -71,7 +75,7 @@ def main():
                             raise
                         archive = event.value
                         assert archive.failure() is None, archive.failure()
-                        assert archive.suggested_filename == 'files.zip'
+                        assert archive.suggested_filename == 'Files.zip'
                         with zipfile.ZipFile(archive.path()) as z:
                             assert len(z.infolist()) == len(source.DATA)
                             assert z.read('documents/guide/deep/한글.txt') == source.DATA['public/documents/guide/deep/한글.txt']
@@ -80,7 +84,69 @@ def main():
                             assert z.read('README.md') == source.DATA['public/README.md']
                             assert z.read('한글 +&.txt') == source.DATA['public/한글 +&.txt']
                             assert z.testzip() is None
-                        expect(page.locator('#notice')).to_contain_text('브라우저에서 확인')
+                        expect(page.locator('#notice')).to_be_empty()
+                        page.locator('#clear-selection').click()
+                        page.locator('tr[data-key="한글 +&.txt"] input').check()
+                        with page.expect_download() as event:
+                            page.locator('#download-zip').click()
+                        single_archive = event.value
+                        assert single_archive.failure() is None, single_archive.failure()
+                        assert single_archive.suggested_filename in ('한글 +&.txt.zip', '한글 +&.zip'), single_archive.suggested_filename
+                        with zipfile.ZipFile(single_archive.path()) as z:
+                            assert z.namelist() == ['한글 +&.txt']
+                            assert z.read('한글 +&.txt') == source.DATA['public/한글 +&.txt']
+                        special_folder_key = 'public/space + folder/a + b.txt'
+                        source.DATA[special_folder_key] = b'nested'
+                        try:
+                            page.locator('#clear-selection').click()
+                            page.locator('#refresh').click()
+                            while page.locator('tr[data-key="space + folder/"]').count() == 0:
+                                expect(page.locator('#load-more')).to_be_visible()
+                                page.locator('#load-more').click()
+                            page.locator('tr[data-key="space + folder/"] input').check()
+                            with page.expect_download() as event:
+                                page.locator('#download-zip').click()
+                            folder_archive = event.value
+                            assert folder_archive.failure() is None, folder_archive.failure()
+                            assert folder_archive.suggested_filename == 'space + folder.zip'
+                            with zipfile.ZipFile(folder_archive.path()) as z:
+                                assert z.read('space + folder/a + b.txt') == b'nested'
+                            page.locator('tr[data-key="space + folder/"] .entry-link').click()
+                            expect(page.locator('tr[data-key="space + folder/a + b.txt"]')).to_be_visible()
+                            page.locator('tr[data-key="space + folder/a + b.txt"] input').check()
+                            with page.expect_download() as event:
+                                page.locator('#download-zip').click()
+                            nested_archive = event.value
+                            assert nested_archive.failure() is None, nested_archive.failure()
+                            assert nested_archive.suggested_filename in ('a + b.txt.zip', 'a + b.zip'), nested_archive.suggested_filename
+                            with zipfile.ZipFile(nested_archive.path()) as z:
+                                assert z.read('a + b.txt') == b'nested'
+                            page.goto(base_url)
+                            expect(page.locator('.file-row')).to_have_count(1)
+                        finally:
+                            del source.DATA[special_folder_key]
+                        time_folder_key = 'public/02:09/build.txt'
+                        source.DATA[time_folder_key] = b'build'
+                        try:
+                            page.locator('#refresh').click()
+                            while page.locator('tr[data-key="02:09/"]').count() == 0:
+                                expect(page.locator('#load-more')).to_be_visible()
+                                page.locator('#load-more').click()
+                            page.locator('tr[data-key="02:09/"] input').check()
+                            with page.expect_download() as event:
+                                page.locator('#download-zip').click()
+                            time_archive = event.value
+                            assert time_archive.failure() is None, time_archive.failure()
+                            assert time_archive.suggested_filename == '02^3A09.zip', time_archive.suggested_filename
+                            with zipfile.ZipFile(time_archive.path()) as z:
+                                assert z.read('02^3A09/build.txt') == b'build'
+                        finally:
+                            del source.DATA[time_folder_key]
+                        page.goto(base_url)
+                        if browser_name != 'chromium':
+                            context.close()
+                            print(f'PASS {browser_name} ZIP downloads with special filenames: {download_mode=} {preview_mode=}')
+                            continue
                         with page.expect_download() as event:
                             page.locator('tr[data-key="README.md"] .download').click()
                         individual = event.value
@@ -90,7 +156,8 @@ def main():
                             page.locator('tr[data-key="README.md"] .entry-link').click()
                         descriptor = event.value.json()
                         expect(page.locator('#preview')).to_be_visible()
-                        expect(page.locator('.preview-code')).to_contain_text('Simple S3 file browser.')
+                        expect(page.locator('.markdown-content h1')).to_have_text('mori')
+                        expect(page.locator('.markdown-content')).to_contain_text('Simple S3 file browser.')
                         assert descriptor['mode'] == preview_mode
                         if preview_mode == 'presigned':
                             assert descriptor['url'].startswith(fixture_url) and 'X-Amz-Signature=' in descriptor['url']
@@ -128,8 +195,11 @@ def main():
         finally:
             fixture.shutdown(); fixture.server_close()
     assert not source.ERRORS, source.ERRORS
-    assert any(e['signed'] for e in source.EVENTS), 'No browser followed a presigned link'
-    print('PASS signatures independently verified by botocore; no cross-origin Basic credential leak; no JavaScript errors')
+    if browser_name == 'chromium':
+        assert any(e['signed'] for e in source.EVENTS), 'No browser followed a presigned link'
+        print('PASS signatures independently verified by botocore; no cross-origin Basic credential leak; no JavaScript errors')
+    else:
+        print(f'PASS {browser_name} ZIP downloads; no JavaScript errors')
 
 if __name__ == "__main__":
     main()

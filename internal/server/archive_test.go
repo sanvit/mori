@@ -81,6 +81,37 @@ func prepareZIP(t *testing.T, a *App, keys ...string) string {
 	}
 	return result.URL
 }
+
+func TestArchiveFilename(t *testing.T) {
+	a := New(testConfig())
+	for _, tc := range []struct {
+		name, prefix string
+		selections   []string
+		want         string
+	}{
+		{"single file", "docs/", []string{"docs/readme.md"}, "readme.md.zip"},
+		{"single folder", "docs/", []string{"docs/images/"}, "images.zip"},
+		{"root single folder", "", []string{"docs/"}, "docs.zip"},
+		{"single time folder", "docs/", []string{"docs/02:09/"}, "02^3A09.zip"},
+		{"single literal caret folder", "docs/", []string{"docs/02^3A09/"}, "02^^3A09.zip"},
+		{"multiple items", "docs/", []string{"docs/readme.md", "docs/images/"}, "docs.zip"},
+		{"time parent collection", "docs/02:09/", []string{"docs/02:09/a", "docs/02:09/b"}, "02^3A09.zip"},
+		{"root collection", "", []string{"readme.md", "docs/"}, "Test.zip"},
+		{"empty title fallback", "", []string{"readme.md", "docs/"}, "files.zip"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "empty title fallback" {
+				a.cfg.Title = ""
+			} else {
+				a.cfg.Title = "Test"
+			}
+			if got := a.archiveFilename(tc.prefix, tc.selections); got != tc.want {
+				t.Fatalf("archiveFilename() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestArchiveStoreNativeZIPAndSingleUse(t *testing.T) {
 	a, heads, gets := archiveFixture(t, nil)
 	// Presigned individual modes do not change ZIP's server-side delivery path.
@@ -129,7 +160,6 @@ func TestArchiveValidationAndServerSideLimits(t *testing.T) {
 		`{"prefix":"docs/","keys":["docs/sub/a.txt"]}`,
 		`{"prefix":"docs/","keys":["other/a.txt"]}`,
 		`{"prefix":"docs/","keys":["docs/../a.txt"]}`,
-		`{"prefix":"docs/","keys":["docs/C:stream"]}`,
 		`{"prefix":"docs","keys":["docs/a.txt"]}`,
 		`{"prefix":"docs/","keys":["docs/a.txt"],"size":0}`,
 		`{"prefix":"docs/","keys":["docs/a.txt"]} {}`,

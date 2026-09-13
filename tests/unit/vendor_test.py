@@ -41,10 +41,11 @@ class Installer(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         (self.root/'web').mkdir()
-        self.pins = {'media-chrome':'4.19.2', 'pdfjs-dist':'6.3.289'}
+        self.pins = {'markdown-it':'15.0.1', 'media-chrome':'4.19.2', 'pdfjs-dist':'6.3.289'}
         (self.root/'package.json').write_text(json.dumps({'dependencies':self.pins}))
-        (self.root/'web/preview.js').write_text('/_mori/vendor/media-chrome-4.19.2/ /_mori/vendor/pdfjs-6.3.289/')
+        (self.root/'web/preview.js').write_text('/_mori/vendor/markdown-it-15.0.1/ /_mori/vendor/media-chrome-4.19.2/ /_mori/vendor/pdfjs-6.3.289/')
         self.data = {
+            'markdown-it':archive({'LICENSE':'test license', 'dist/browser/markdown-it.esm.min.mjs':'test markdown', 'dist/browser/unwanted.js':'skip'}),
             'media-chrome':archive({'LICENSE':'test license', 'dist/iife/index.js':'test media', 'dist/surprise.js':'skip'}),
             'pdfjs-dist':archive({'LICENSE':'test license', 'legacy/build/pdf.min.mjs':'test pdf', 'legacy/build/pdf.worker.min.mjs':'test worker', 'cmaps/test.bcmap':'test cmap', 'wasm/test.wasm':'test wasm', '../escape.js':'never extract', 'legacy/build/pdf.js':'skip'}),
         }
@@ -64,7 +65,7 @@ class Installer(unittest.TestCase):
         vendor.main()
         self.assertTrue(vendor.verify(self.pins))
         files = list((self.root/'web/vendor').rglob('*'))
-        self.assertFalse(any(p.name in ('escape.js','link.js','surprise.js','pdf.js') for p in files))
+        self.assertFalse(any(p.name in ('escape.js','link.js','surprise.js','unwanted.js','pdf.js') for p in files))
         p = self.root/'web/vendor/media-chrome-4.19.2/index.js'
         p.write_text('tampered')
         self.assertFalse(vendor.verify(self.pins))

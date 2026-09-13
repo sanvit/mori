@@ -4,7 +4,7 @@
   const dialog = $('preview');
   const body = $('preview-body');
   const MAX_TEXT = 1024 * 1024;
-  const LIB = { media: '/_mori/vendor/media-chrome-4.19.2/index.js', pdf: '/_mori/vendor/pdfjs-6.3.289/pdf.mjs', worker: '/_mori/vendor/pdfjs-6.3.289/pdf.worker.mjs', base: '/_mori/vendor/pdfjs-6.3.289/' };
+  const LIB = { media: '/_mori/vendor/media-chrome-4.19.2/index.js', pdf: '/_mori/vendor/pdfjs-6.3.289/pdf.mjs', worker: '/_mori/vendor/pdfjs-6.3.289/pdf.worker.mjs', base: '/_mori/vendor/pdfjs-6.3.289/', markdown: '/_mori/vendor/markdown-it-15.0.1/index.mjs' };
   const kinds = {
     image: 'png jpg jpeg gif webp avif bmp ico',
     video: 'mp4 m4v webm ogv mov',
@@ -15,7 +15,7 @@
   const extKinds = new Map(Object.entries(kinds).flatMap(([kind, list]) => list.split(' ').map(ext => [ext, kind])));
   const labels = { image: '이미지', video: '영상', audio: '오디오', pdf: 'PDF', text: '텍스트', unsupported: '파일' };
   let active = null, playlist = [], trigger = null, historyID = null, closingHistory = false;
-  let mediaPromise = null, pdfPromise = null;
+  let mediaPromise = null, pdfPromise = null, markdownPromise = null;
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -42,6 +42,7 @@
     if (['readme', 'license', 'dockerfile', 'makefile', '.env', '.gitignore'].includes(base)) return 'text';
     return extKinds.get(base.includes('.') ? base.split('.').pop() : '') || 'unsupported';
   }
+  function isMarkdown(name) { return /\.(md|markdown)$/i.test(name); }
   function size(n) { if (!Number.isFinite(n) || n < 0) return ''; if (n < 1024) return n + ' B'; const p = Math.min(4, Math.floor(Math.log2(n) / 10)); return (n / 1024 ** p).toFixed(1) + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][p]; }
   function objectURL(entry, download = false) { return '/_mori/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) }); }
   function current(s) { return active === s && !s.abort.signal.aborted && dialog.open; }
@@ -113,7 +114,7 @@
       s.source = await descriptor(s);
       if (!current(s)) return;
       s.kind = s.source.kind; dialog.dataset.kind = s.kind;
-      $('preview-meta').textContent = [s.source.renderHTML ? 'HTML' : labels[s.kind], size(entry.size)].filter(Boolean).join(' · ');
+      $('preview-meta').textContent = [s.source.renderHTML ? 'HTML' : s.kind === 'text' && isMarkdown(entry.name) ? 'Markdown' : labels[s.kind], size(entry.size)].filter(Boolean).join(' · ');
       if (s.kind === 'image') await image(s);
       else if (s.kind === 'audio' || s.kind === 'video') await media(s);
       else if (s.kind === 'pdf') await pdf(s);
@@ -228,11 +229,88 @@
       parts.push(decoder.decode());
     } finally { reader.releaseLock(); }
     if (!current(s)) return;
-    const wrap = el('div', 'text-preview'); const pre = el('pre', 'preview-code'); pre.tabIndex = 0;
-    pre.setAttribute('aria-label', s.entry.name + ' 텍스트 내용'); pre.textContent = parts.join('');
-    const tools = el('div', 'text-tools'); const count = el('span', '', limited ? '처음 1 MiB만 표시합니다.' : 'UTF-8 · 읽기 전용');
-    const toggle = button('줄바꿈 켜기', () => { const on = pre.classList.toggle('wrap'); toggle.textContent = on ? '줄바꿈 끄기' : '줄바꿈 켜기'; toggle.setAttribute('aria-pressed', String(on)); }, null, 'text-toggle'); toggle.setAttribute('aria-pressed', 'false');
-    tools.append(count, toggle); wrap.append(tools, pre); body.replaceChildren(wrap); body.setAttribute('aria-busy', 'false');
+    const content = parts.join('');
+    if (isMarkdown(s.entry.name)) await markdown(s, content, limited);
+    else plainText(s, content, limited);
+  }
+  function sourceView(s, content) {
+    const pre = el('pre', 'preview-code'); pre.tabIndex = 0;
+    pre.setAttribute('aria-label', s.entry.name + ' 원문'); pre.textContent = content;
+    const toggle = button('줄바꿈 켜기', () => { const on = pre.classList.toggle('wrap'); toggle.textContent = on ? '줄바꿈 끄기' : '줄바꿈 켜기'; toggle.setAttribute('aria-pressed', String(on)); }, null, 'text-toggle');
+    toggle.setAttribute('aria-pressed', 'false');
+    return { pre, toggle };
+  }
+  function plainText(s, content, limited, fallback = false) {
+    if (!current(s)) return;
+    const wrap = el('div', 'text-preview'), tools = el('div', 'text-tools');
+    const { pre, toggle } = sourceView(s, content);
+    const label = fallback ? '문서 보기를 불러오지 못해 원문을 표시합니다.' + (limited ? ' 처음 1 MiB만 표시합니다.' : '') : limited ? '처음 1 MiB만 표시합니다.' : 'UTF-8 · 읽기 전용';
+    tools.append(el('span', '', label), toggle); wrap.append(tools, pre);
+    body.replaceChildren(wrap); body.setAttribute('aria-busy', 'false');
+  }
+  function markdownURL(raw, key, image = false) {
+    if (!raw) return '';
+    try {
+      const base = 'https://mori.invalid/' + key.split('/').map(encodeURIComponent).join('/');
+      const target = new URL(raw, base);
+      if (target.origin !== 'https://mori.invalid') {
+        return !image && ['http:', 'https:', 'mailto:'].includes(target.protocol) && !target.username && !target.password ? target.href : '';
+      }
+      const objectKey = target.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
+      if (!objectKey || objectKey.endsWith('/') || objectKey.includes('\\') || /[\x00-\x1f\x7f]/.test(objectKey) || objectKey.split('/').some(part => !part || part === '.' || part === '..')) return '';
+      return objectURL({ key: objectKey });
+    } catch { return ''; }
+  }
+  const markdownTags = new Set('p h1 h2 h3 h4 h5 h6 blockquote pre code em strong s del ul ol li hr br a img table thead tbody tr th td'.split(' '));
+  function safeMarkdownNode(node, key) {
+    if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.nodeValue);
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+    const tag = node.localName.toLowerCase();
+    if (!markdownTags.has(tag)) return document.createTextNode(node.textContent || '');
+    if (tag === 'img') {
+      const src = markdownURL(node.getAttribute('src'), key, true);
+      if (!src) return document.createTextNode(node.getAttribute('alt') || '');
+      const img = el('img'); img.alt = node.getAttribute('alt') || ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.src = src;
+      return img;
+    }
+    const href = tag === 'a' ? markdownURL(node.getAttribute('href'), key) : '';
+    const copy = el(tag === 'a' && !href ? 'span' : tag);
+    if (tag === 'a' && href) { copy.href = href; copy.target = '_blank'; copy.rel = 'noopener noreferrer'; }
+    if (tag === 'ol') {
+      const start = Number(node.getAttribute('start'));
+      if (Number.isInteger(start) && start > 1 && start <= 10000) copy.start = start;
+    }
+    for (const child of node.childNodes) { const safe = safeMarkdownNode(child, key); if (safe) copy.append(safe); }
+    return copy;
+  }
+  async function markdown(s, content, limited) {
+    let rendered;
+    try {
+      markdownPromise ||= import(LIB.markdown).catch(e => { markdownPromise = null; throw e; });
+      const module = await markdownPromise;
+      if (!current(s)) return;
+      const parser = new module.default({ html: false, linkify: false, typographer: false });
+      // Parse off-screen, then copy only safe tags and attributes into the dialog.
+      const template = document.createElement('template'); template.innerHTML = parser.render(content);
+      rendered = el('article', 'markdown-content'); rendered.tabIndex = 0;
+      rendered.setAttribute('aria-label', s.entry.name + ' 문서');
+      for (const node of template.content.childNodes) { const safe = safeMarkdownNode(node, s.entry.key); if (safe) rendered.append(safe); }
+    } catch { plainText(s, content, limited, true); return; }
+    if (!current(s)) return;
+    const wrap = el('div', 'text-preview'), tools = el('div', 'text-tools');
+    const { pre, toggle } = sourceView(s, content);
+    const modes = el('div', 'markdown-modes'); modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Markdown 표시 방식');
+    const documentButton = button('문서', () => setMode(false), null, 'markdown-mode');
+    const sourceButton = button('원문', () => setMode(true), null, 'markdown-mode');
+    const controls = el('div', 'markdown-controls'); controls.append(modes, toggle);
+    modes.append(documentButton, sourceButton);
+    const setMode = raw => {
+      rendered.hidden = raw; pre.hidden = !raw; toggle.hidden = !raw;
+      documentButton.setAttribute('aria-pressed', String(!raw)); sourceButton.setAttribute('aria-pressed', String(raw));
+    };
+    setMode(false);
+    tools.append(el('span', '', limited ? '처음 1 MiB만 표시합니다.' : 'UTF-8 · 읽기 전용'), controls);
+    wrap.append(tools, rendered, pre); body.replaceChildren(wrap); body.setAttribute('aria-busy', 'false');
   }
   async function pdfText(s, page) {
     // PDF.js getTextContent() uses ReadableStream's async iterator, which

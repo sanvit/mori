@@ -18,6 +18,31 @@ type archiveError struct {
 func (e *archiveError) Error() string                 { return e.Code }
 func zipError(status int, code, message string) error { return &archiveError{status, code, message} }
 
+// Keep ZIP entry names usable on systems where ':' is a reserved path
+// character. Escaping '^' as well makes the mapping unambiguous: "02:09" and
+// a literal "02^3A09" must never become the same archive entry. Both Chromium
+// and WebKit preserve '^' in Content-Disposition download filenames.
+var archiveNameEscaper = strings.NewReplacer("^", "^^", ":", "^3A")
+
+func archivePortableName(name string) string { return archiveNameEscaper.Replace(name) }
+
+// archiveFilename gives a single selected item its own name. For a collection,
+// use the folder being viewed; at the browser root, use the configured title.
+func (a *App) archiveFilename(prefix string, selections []string) string {
+	name := ""
+	if len(selections) == 1 {
+		name = path.Base(strings.TrimSuffix(selections[0], "/"))
+	} else if prefix != "" {
+		name = path.Base(strings.TrimSuffix(prefix, "/"))
+	} else {
+		name = strings.TrimSpace(a.cfg.Title)
+	}
+	if name == "" || name == "." {
+		name = "files"
+	}
+	return archivePortableName(name) + ".zip"
+}
+
 // Build a bounded metadata-only plan. Explicit file keys use a fresh Stat;
 // recursive files use fresh listing metadata (not client sizes or list cache).
 // Reads enforce native If-Match or an internal metadata token and length.
@@ -30,29 +55,28 @@ func (a *App) buildArchivePlan(ctx context.Context, prefix string, keys []string
 	if len(keys) == 0 || len(keys) > a.cfg.ZipMaxFiles {
 		return plan, zipError(400, "zip_file_limit", fmt.Sprintf("파일 또는 폴더를 1개 이상, 최대 %d개까지 선택해 주세요.", a.cfg.ZipMaxFiles))
 	}
-	if prefix != "" {
-		plan.Filename = path.Base(strings.TrimSuffix(prefix, "/")) + ".zip"
-	}
 	// Validate ALL selections before sending any network request. Selected roots
 	// must be immediate children; arbitrary descendants arrive only from S3 LIST.
 	selections := []string{}
 	selected := map[string]bool{}
 	for _, key := range keys {
 		name := strings.TrimSuffix(strings.TrimPrefix(key, prefix), "/")
-		if config.ValidateKey(key, false) != nil || len(a.cfg.Prefix+key) > 1024 || !strings.HasPrefix(key, prefix) || name == "" || strings.ContainsAny(name, "/\\:") {
-			return plan, zipError(400, "invalid_archive_key", "현재 폴더의 파일 또는 폴더를 선택해 주세요. 잘못된 경로나 콜론은 ZIP 이름에 허용하지 않습니다.")
+		if config.ValidateKey(key, false) != nil || len(a.cfg.Prefix+key) > 1024 || !strings.HasPrefix(key, prefix) || name == "" || strings.ContainsAny(name, "/\\") {
+			return plan, zipError(400, "invalid_archive_key", "현재 폴더의 파일 또는 폴더를 선택해 주세요. 잘못된 경로는 ZIP에 허용하지 않습니다.")
 		}
 		if !selected[key] {
 			selected[key] = true
 			selections = append(selections, key)
 		}
 	}
+	plan.Filename = a.archiveFilename(prefix, selections)
 	seen := map[string]int{}
 	add := func(item archiveItem) error {
-		item.Name = strings.TrimPrefix(item.Key, prefix)
-		if config.ValidateKey(item.Key, false) != nil || len(a.cfg.Prefix+item.Key) > 1024 || !strings.HasPrefix(item.Key, prefix) || item.Name == "" || strings.ContainsAny(item.Name, "\\:") {
+		relative := strings.TrimPrefix(item.Key, prefix)
+		if config.ValidateKey(item.Key, false) != nil || len(a.cfg.Prefix+item.Key) > 1024 || !strings.HasPrefix(item.Key, prefix) || relative == "" || strings.Contains(relative, "\\") {
 			return zipError(400, "unsafe_archive_path", "하위 파일에 ZIP으로 안전하게 저장할 수 없는 경로가 있습니다.")
 		}
+		item.Name = archivePortableName(relative)
 		if idx, ok := seen[item.Key]; ok {
 			prev := plan.Items[idx]
 			if prev.Size != item.Size || prev.ETag != item.ETag {

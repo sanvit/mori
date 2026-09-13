@@ -55,7 +55,7 @@ def main() -> None:
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args()
     pins = json.loads((ROOT / 'package.json').read_text())['dependencies']
-    if set(pins) != {'media-chrome', 'pdfjs-dist'}:
+    if set(pins) != {'markdown-it', 'media-chrome', 'pdfjs-dist'}:
         raise SystemExit('Unexpected browser dependency list')
     # Prevent a dependency bump leaving the lazy-loader pointed at the old version.
     js = (ROOT / 'web/preview.js').read_text()
@@ -87,7 +87,7 @@ def main() -> None:
             expected = base64.b64decode(integrity.removeprefix('sha512-'), validate=True)
             if hashlib.sha512(data).digest() != expected:
                 raise RuntimeError('npm package integrity mismatch')
-            target = ('media-chrome-' if name == 'media-chrome' else 'pdfjs-') + version
+            target = ('pdfjs' if name == 'pdfjs-dist' else name) + '-' + version
             manifest['packages'][name] = {'version': version, 'url': expected_url, 'integrity': integrity, 'sha256': digest(data)}
             count = 0
             with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
@@ -97,7 +97,10 @@ def main() -> None:
                         continue
                     relative = '/'.join(p.parts[1:])
                     dest = None
-                    if name == 'media-chrome':
+                    if name == 'markdown-it':
+                        if relative == 'dist/browser/markdown-it.esm.min.mjs': dest = 'index.mjs'
+                        elif relative == 'LICENSE': dest = 'LICENSE'
+                    elif name == 'media-chrome':
                         if relative == 'dist/iife/index.js': dest = 'index.js'
                         elif relative in ('LICENSE', 'LICENSE.md'): dest = 'LICENSE'
                     else:
@@ -119,7 +122,12 @@ def main() -> None:
                     output.write_bytes(payload)
                     manifest['files'][filename] = digest(payload)
                     count += 1
-            for filename in (['index.js', 'LICENSE'] if name == 'media-chrome' else ['pdf.mjs', 'pdf.worker.mjs', 'LICENSE']):
+            required = {
+                'markdown-it': ['index.mjs', 'LICENSE'],
+                'media-chrome': ['index.js', 'LICENSE'],
+                'pdfjs-dist': ['pdf.mjs', 'pdf.worker.mjs', 'LICENSE'],
+            }[name]
+            for filename in required:
                 if not (stage / target / filename).is_file():
                     raise RuntimeError(f'Published package lacks required asset: {filename}')
             print('Copied', count, 'files from', name, flush=True)

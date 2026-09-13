@@ -73,12 +73,36 @@
 .pdf-password { max-width: 380px; padding: 24px; margin: auto; }
 .pdf-password label { display: block; margin: 20px 0 12px; font-size: 12px; }
 .pdf-password input { display: block; width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #cbd9e2; border-radius: 7px; font-size: 16px; }
-/* Source files are plain text. No Markdown/HTML execution, no syntax-highlighter. */
+/* Source files stay readable as text; Markdown has a separate, safe document view. */
 .text-preview { display: flex; flex-direction: column; min-width: 0; width: 100%; background: #fcfdfe; }
 .text-tools { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 24px; border-bottom: 1px solid #e6ecf1; background: #f5f8fa; font-size: 11px; color: #728692; }
 .text-toggle { font-size: 11px; border: 0; background: transparent; padding: 10px; min-height: 40px; color: #4c7894; }
 .preview-code { flex: 1; min-height: 0; overflow: auto; padding: 24px; margin: 0; color: #405765; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.9; tab-size: 4; }
 .preview-code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-controls { display: flex; align-items: center; gap: 8px; }
+.markdown-modes { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid #d8e3ea; border-radius: 7px; background: #eaf1f5; }
+.markdown-mode { min-width: 52px; min-height: 36px; padding: 7px 11px; border: 0; border-radius: 5px; background: transparent; color: #597489; font-size: 12px; cursor: pointer; }
+.markdown-mode[aria-pressed="true"] { background: #fff; color: #275f81; box-shadow: 0 1px 4px #183e5a1f; font-weight: 600; }
+.markdown-mode:focus-visible { outline: 2px solid #4d94bd; outline-offset: 2px; }
+.markdown-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 30px max(24px, calc((100% - 820px) / 2)); background: #fff; color: #334b5b; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4, .markdown-content h5, .markdown-content h6 { margin: 1.5em 0 .6em; line-height: 1.35; color: #233d50; }
+.markdown-content h1 { font-size: 1.75em; border-bottom: 1px solid #e5edf2; padding-bottom: .35em; }
+.markdown-content h2 { font-size: 1.4em; border-bottom: 1px solid #e5edf2; padding-bottom: .3em; }
+.markdown-content h3 { font-size: 1.18em; }
+.markdown-content p, .markdown-content ul, .markdown-content ol, .markdown-content blockquote, .markdown-content pre, .markdown-content table { margin: 0 0 1em; }
+.markdown-content ul, .markdown-content ol { padding-left: 1.7em; }
+.markdown-content li > ul, .markdown-content li > ol { margin-bottom: 0; }
+.markdown-content a { color: #287cac; text-decoration: underline; text-underline-offset: 2px; }
+.markdown-content blockquote { padding: .15em 1em; border-left: 3px solid #b9d3e1; color: #607687; background: #f7fafc; }
+.markdown-content code { padding: .1em .3em; border-radius: 4px; background: #eef3f6; font: .9em ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.markdown-content pre { overflow: auto; padding: 14px 16px; border-radius: 7px; background: #eef3f6; overflow-wrap: normal; }
+.markdown-content pre code { padding: 0; background: none; white-space: pre; }
+.markdown-content img { max-width: 100%; height: auto; }
+.markdown-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.markdown-content th, .markdown-content td { padding: 6px 10px; border: 1px solid #dce6ec; text-align: left; }
+.markdown-content th { background: #f4f8fa; }
+.markdown-content hr { border: 0; border-top: 1px solid #dce6ec; margin: 1.5em 0; }
 @media (max-width: 740px) {
   .preview-dialog { width: 100%; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
   .preview-dialog::backdrop { backdrop-filter: none; }
@@ -106,6 +130,7 @@
   .pdf-stage { padding: 12px; }
   .text-tools { padding: 4px 10px 4px 16px; }
   .preview-code { padding: 16px; font-size: 12px; }
+  .markdown-content { padding: 20px 16px; font-size: 13px; }
 }
 @media (max-height: 480px) and (orientation: landscape) {
   .preview-header { min-height: 54px; padding-top: 6px; padding-bottom: 6px; }

@@ -16,22 +16,23 @@
 | 영상 | MP4, M4V, WebM, OGV, MOV | Media Chrome 컨트롤 + native video |
 | 소리 | MP3, M4A, AAC, WAV, OGG/OGA, Opus, FLAC | Media Chrome 컨트롤 + native audio |
 | PDF | PDF | PDF.js, 연속 스크롤, 확대/폭 맞춤, 암호 입력 |
-| 텍스트 | TXT, Markdown, JSON, CSV, YAML, 코드, 로그, HTML, SVG 등 | UTF-8 원문, 줄바꿈 전환, 처음 1 MiB |
+| Markdown | MD, MARKDOWN | 렌더링된 문서 기본 표시, 문서/원문 전환, 처음 1 MiB |
+| 텍스트 | TXT, JSON, CSV, YAML, 코드, 로그, HTML, SVG 등 | UTF-8 원문, 줄바꿈 전환, 처음 1 MiB |
 | 그 외 | ZIP, Office, HEIC, TIFF, MKV 등 | 원본 다운로드 |
 
 확장자는 뷰어 선택용이지 재생 보증이 아닙니다. 같은 MP4/MOV라도 코덱·프로파일·OS·브라우저에 따라 재생되지 않을 수 있습니다. 서버 변환/transcoding, HEIC/TIFF 변환, Office 뷰어, HLS/DASH manifest 및 하위 세그먼트 서명은 구현하지 않았습니다. 실패하면 안내와 재시도/다운로드를 표시합니다.
 
-기본 설정에서 HTML·SVG·Markdown은 마크업으로 실행하지 않고 `textContent`로만 표시합니다. `.ts`는 TypeScript 소스로 처리합니다. PDF는 연속 스크롤 미리보기이며 편집기·전자서명 검증기·양식 작성기는 아닙니다. PDF 스크립트/XFA를 실행하지 않습니다. 암호는 PDF.js에 로컬로 전달하고 서버/로그/스토리지에 저장하지 않습니다. 페이지에는 스크린리더용 텍스트를 제공하지만 일반 PDF 뷰어의 선택 가능한 텍스트 레이어나 검색/주석 UI는 넣지 않았습니다.
+기본 설정에서 HTML·SVG는 `textContent`로만 표시합니다. Markdown은 문서로 렌더링하지만 원문 HTML은 문자로 표시하고 스크립트·이벤트 속성을 실행하지 않습니다. 같은 저장소의 상대 경로 이미지만 자동으로 불러오며, 외부 이미지는 대체 텍스트만 표시합니다. 링크는 클릭할 때 새 탭에서 엽니다. `.ts`는 TypeScript 소스로 처리합니다. PDF는 연속 스크롤 미리보기이며 편집기·전자서명 검증기·양식 작성기는 아닙니다. PDF 스크립트/XFA를 실행하지 않습니다. 암호는 PDF.js에 로컬로 전달하고 서버/로그/스토리지에 저장하지 않습니다. 페이지에는 스크린리더용 텍스트를 제공하지만 일반 PDF 뷰어의 선택 가능한 텍스트 레이어나 검색/주석 UI는 넣지 않았습니다.
 
 ## 유지보수 중인 의존성
 
-오디오·영상 컨트롤에는 [Media Chrome](https://github.com/muxinc/media-chrome), PDF 렌더링에는 [PDF.js](https://github.com/mozilla/pdf.js)를 사용합니다. 의존성 설정은 `package.json`에서 관리합니다.
+오디오·영상 컨트롤에는 [Media Chrome](https://github.com/muxinc/media-chrome), PDF 렌더링에는 [PDF.js](https://github.com/mozilla/pdf.js), Markdown 렌더링에는 [markdown-it](https://github.com/markdown-it/markdown-it)를 사용합니다. 의존성 설정은 `package.json`에서 관리합니다.
 
-Media Chrome의 번들된 Web Components와 PDF.js legacy 빌드를 사용합니다. 별도의 React/Vue, UI 프레임워크, 플레이리스트 서비스는 없습니다. 이미지·텍스트에는 추가 라이브러리를 사용하지 않습니다.
+Media Chrome의 번들된 Web Components와 PDF.js legacy 빌드를 사용합니다. Markdown의 HTML 입력은 비활성화하고 렌더링 결과를 허용된 HTML 요소·속성으로 제한합니다. 별도의 React/Vue, UI 프레임워크, 플레이리스트 서비스는 없습니다. 이미지·일반 텍스트에는 추가 라이브러리를 사용하지 않습니다.
 
 ## 빌드: 외부 요청은 빌드할 때만
 
-이 소스 ZIP에는 두 라이브러리의 배포 파일을 미리 넣지 않았습니다. **Docker 빌드의 assets 단계가 설정된 공식 npm 패키지를 내려받습니다.** 이 단계는 인터넷 접근이 필요하며, 실패하면 이미지 빌드도 실패합니다. 패키지의 registry metadata와 tarball URL, SHA-512 integrity를 확인하고 필요한 브라우저 파일만 복사합니다. npm lifecycle 스크립트나 임의 transitive 패키지를 실행하지 않습니다.
+이 소스 ZIP에는 세 라이브러리의 배포 파일을 미리 넣지 않았습니다. **Docker 빌드의 assets 단계가 설정된 공식 npm 패키지를 내려받습니다.** 이 단계는 인터넷 접근이 필요하며, 실패하면 이미지 빌드도 실패합니다. 패키지의 registry metadata와 tarball URL, SHA-512 integrity를 확인하고 필요한 브라우저 파일만 복사합니다. npm lifecycle 스크립트나 임의 transitive 패키지를 실행하지 않습니다.
 
 ```sh
 # Docker: assets 수집 -> Go 테스트/빌드 -> 단일 런타임 컨테이너
