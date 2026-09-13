@@ -170,7 +170,7 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 				w.Header().Del("Content-Disposition")
 				w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 			}
-			w.Header().Set("Cache-Control", "private, no-store")
+			a.restrictCaching(w, status)
 		} else if a.cfg.Username != "" {
 			value := w.Header().Get("Cache-Control")
 			if value == "" {
@@ -180,7 +180,9 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 			for _, part := range strings.Split(value, ",") {
 				part = strings.TrimSpace(part)
 				name, _, _ := strings.Cut(part, "=")
-				if part != "" && !strings.EqualFold(name, "public") && !strings.EqualFold(name, "private") {
+				// s-maxage only speaks to shared caches, which private just shut
+				// out; leaving it would advertise a lifetime nothing can use.
+				if part != "" && !strings.EqualFold(name, "public") && !strings.EqualFold(name, "private") && !strings.EqualFold(name, "s-maxage") {
 					directives = append(directives, part)
 				}
 			}
@@ -263,9 +265,20 @@ func (a *App) presignRedirect(w http.ResponseWriter, r *http.Request, key string
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+// restrictCaching decides what downstream may keep of a stored file. Behind
+// Basic auth every response is one visitor's, and an error body belongs to the
+// request that produced it, so both are withheld. A public deployment keeps the
+// freshness the cache policy computed, which is what lets a cache in front of
+// mori serve the file at all.
+func (a *App) restrictCaching(w http.ResponseWriter, status int) {
+	if a.cfg.Username != "" || status >= 400 {
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
+}
+
 func (a *App) cachedObject(w http.ResponseWriter, r *http.Request, key string, download bool) {
 	a.objectPresentation(w, key, download)
-	w.Header().Set("Cache-Control", "private, no-store")
+	a.restrictCaching(w, http.StatusOK)
 	w.Header().Set("X-Delivery-Mode", "proxy")
 	if a.objects == nil {
 		a.serveObject(w, r, key, download)
@@ -275,7 +288,7 @@ func (a *App) cachedObject(w http.ResponseWriter, r *http.Request, key string, d
 	copyReq.URL.RawQuery = ""
 	wrapped := &policyResponse{ResponseWriter: w, header: make(http.Header), apply: func(status int, h http.Header) {
 		a.objectPresentation(w, key, download)
-		w.Header().Set("Cache-Control", "private, no-store")
+		a.restrictCaching(w, status)
 	}}
 	status, err := a.objects.ServeObject(wrapped, copyReq, key)
 	if err != nil {

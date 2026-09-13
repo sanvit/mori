@@ -121,7 +121,9 @@ FTP/FTPS·SFTP와 ETag 없는 WebDAV는 저장소 식별값(종류·주소·사�
 
 ## HTTP 정책과 통합 시 보강
 
-- 캐시에는 원본 헤더를 보관한다. browser/API의 private,no-store 및 MIME/CSP/attachment 정책은 응답 직전에 적용한다. 서버 캐시 HIT를 끄거나 browser 응답을 public으로 바꾸지 않는다.
+- 캐시에는 원본 헤더를 보관한다. MIME/CSP/attachment 정책은 응답 직전에 적용한다. 응답 정책은 서버 캐시 HIT를 끄지 않는다.
+- 내보내는 `max-age`는 경로 규칙의 `browser_ttl`, `s-maxage`는 mori 자신의 이 객체 캐시 TTL이다. 앞단 공유 캐시가 mori와 같은 기간만 보관하도록 하고 `Age`로 남은 신선도를 전달한다. 원본이 스스로 `no-store`·`private`·`no-cache`·`s-maxage`를 말했으면 덮어쓰지 않는다.
+- Basic 인증이 있으면 `public`을 `private`로 낮추고 `s-maxage`를 제거하며, browser 모드 파일 응답은 `private, no-store`다. 인증이 없는 공개 배포에서만 세 모드가 계산된 정책을 그대로 내보낸다. 오류 응답은 어느 배포에서도 보관하지 않는다.
 - spa/direct는 원본 MIME·Content-Encoding·Content-Disposition과 TTL을 유지한다. 인증된 사이트 응답은 private으로 제한한다. Set-Cookie와 hop-by-hop 헤더는 전달하지 않는다.
 - If-Match / If-None-Match / If-Modified-Since / If-Unmodified-Since / If-Range를 공통 처리한다. 304 재검증은 이전 헤더를 병합하고 `browser_ttl=0s`도 명시값으로 유지한다.
 - HEAD는 원본 GET을 만들지 않는다. stale-if-error도 조건과 Range를 먼저 적용한다. 원본403/404는 stale 성공으로 바꾸지 않는다. ZIP은 stale을 허용하지 않는다.

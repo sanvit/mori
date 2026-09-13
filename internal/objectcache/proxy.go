@@ -274,14 +274,49 @@ func (p *Proxy) serveObject(w http.ResponseWriter, r *http.Request, requestPath,
 	return p.serveKnown(w, r, meta, forcedStatus)
 }
 
+// applyCacheControl states the freshness mori is willing to promise downstream.
+// max-age is the browser lifetime a browser_ttl rule asked for, and s-maxage is
+// mori's own cache lifetime for this object, so a shared cache in front of mori
+// may hold it for exactly as long as mori would. Age goes out with it, so a
+// cache that receives the response late sees the time remaining rather than the
+// whole window. An origin that spoke for itself is not overruled: nothing is
+// added once it has asked for no-store, private, no-cache or its own s-maxage.
+func applyCacheControl(w http.ResponseWriter, m *ObjectMeta) {
+	shared := int64(0)
+	if m.Cacheable {
+		if d := m.ExpiresAt.Sub(m.CachedAt); d > 0 {
+			shared = int64(d.Seconds())
+		}
+	}
+	if m.BrowserTTLSet || m.BrowserTTL > 0 {
+		value := "public, max-age=" + strconv.FormatInt(m.BrowserTTL, 10)
+		if shared > 0 {
+			value += ", s-maxage=" + strconv.FormatInt(shared, 10)
+		}
+		w.Header().Set("Cache-Control", value)
+		return
+	}
+	if shared == 0 {
+		return
+	}
+	current := w.Header().Get("Cache-Control")
+	for _, spoken := range []string{"s-maxage", "no-store", "private", "no-cache"} {
+		if _, ok := parseCacheControl(current)[spoken]; ok {
+			return
+		}
+	}
+	if current == "" {
+		current = "public"
+	}
+	w.Header().Set("Cache-Control", current+", s-maxage="+strconv.FormatInt(shared, 10))
+}
+
 func (p *Proxy) serveKnown(w http.ResponseWriter, r *http.Request, meta *ObjectMeta, forcedStatus int) (int, error) {
 	if expected, ok := r.Context().Value(expectedReadKey{}).(string); ok && expected != meta.ETag {
 		return http.StatusPreconditionFailed, errors.New("object changed since ZIP planning")
 	}
 	setMetaHeaders(w, meta)
-	if meta.BrowserTTLSet || meta.BrowserTTL > 0 {
-		w.Header().Set("Cache-Control", "public, max-age="+strconv.FormatInt(meta.BrowserTTL, 10))
-	}
+	applyCacheControl(w, meta)
 	if forcedStatus == 0 && !clientPreconditions(r, meta) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusPreconditionFailed)
@@ -431,9 +466,7 @@ func (p *Proxy) streamDirect(w http.ResponseWriter, r *http.Request, m *ObjectMe
 	}
 	copyOriginHeaders(w.Header(), resp.Header)
 	w.Header().Set("Content-Disposition", media.Disposition(w.Header().Get("Content-Disposition"), m.OriginKey))
-	if m.BrowserTTLSet {
-		w.Header().Set("Cache-Control", "public, max-age="+strconv.FormatInt(m.BrowserTTL, 10))
-	}
+	applyCacheControl(w, m)
 	status := resp.StatusCode
 	if forcedStatus != 0 && resp.StatusCode < 400 {
 		status = forcedStatus

@@ -42,7 +42,21 @@ docker compose up --build -d
 
 ### 캐시 정책과 대용량 파일
 
-`SERVE_MODE=browser`에서도 기본 `CACHE_MODE=internal`로 서버 디스크 캐시를 사용합니다. 파일 응답의 `private, no-store`는 사용자 브라우저·중간 프록시의 보관만 막으며, mori 내부의 HIT·구간 캐시·미리 읽기를 끄지 않습니다. SPA/direct는 원본 Cache-Control과 경로별 `browser_ttl`을 반영하고 인증된 응답에는 `private`를 적용합니다. 200/HEAD/304에 같은 응답 정책을 적용합니다. 원본 자체의 `no-store`나 캐시 bypass 규칙은 내부 캐시 여부에도 영향을 줍니다. S3 presigned GET은 mori를 통과하지 않으므로 내부 캐시를 우회합니다.
+`SERVE_MODE=browser`에서도 기본 `CACHE_MODE=internal`로 서버 디스크 캐시를 사용합니다. Basic 인증을 설정한 배포에서는 파일 응답이 `private, no-store`입니다. 이는 사용자 브라우저·중간 프록시의 보관만 막으며 mori 내부의 HIT·구간 캐시·미리 읽기를 끄지 않습니다.
+
+#### mori 앞단에 캐시를 두는 경우
+
+`BROWSER_PUBLIC=true`(또는 `AUTH_MODE=public`)로 인증 없이 공개한 배포에서는 세 모드 모두 계산된 캐시 정책을 그대로 내보내므로 CDN·리버스 프록시가 파일을 보관할 수 있습니다.
+
+| 지시자 | 값 | 대상 |
+|---|---|---|
+| `max-age` | 경로 규칙의 `browser_ttl` | 사용자 브라우저 |
+| `s-maxage` | mori 자신의 캐시 TTL (규칙의 `ttl` 또는 원본 Cache-Control에서 계산) | CDN 등 공유 캐시 |
+| `Age` | 이 객체를 캐시한 뒤 지난 시간 | 남은 신선도 계산 |
+
+`s-maxage`는 mori가 스스로 이 객체를 유효하다고 보는 기간과 같습니다. 앞단 캐시는 mori와 정확히 같은 기간만큼 보관하며, `Age`가 함께 나가므로 늦게 받은 캐시는 남은 시간만 인정합니다.
+
+원본이 스스로 `no-store`·`private`·`no-cache`·`s-maxage`를 말했다면 그 값을 덮어쓰지 않습니다. Basic 인증이 있는 배포는 `private`로 낮추고 `s-maxage`를 제거하며, browser 모드의 파일 응답은 `private, no-store`를 유지합니다. 오류 응답은 공개 배포에서도 보관하지 않습니다. SPA/direct는 원본 Cache-Control과 경로별 `browser_ttl`을 반영하고 인증된 응답에는 `private`를 적용합니다. 200/HEAD/304에 같은 응답 정책을 적용합니다. 원본 자체의 `no-store`나 캐시 bypass 규칙은 내부 캐시 여부에도 영향을 줍니다. S3 presigned GET은 mori를 통과하지 않으므로 내부 캐시를 우회합니다.
 
 직접 파일 URL도 UTF-8 `Content-Disposition` 파일명을 제공합니다. 유효한 원본 파일명을 보존하고 없거나 잘못되었으면 실제 파일 경로의 마지막 이름으로 보완합니다. WebDAV의 유효한 원본 ETag는 보존하며, ETag 없는 WebDAV와 FTP/FTPS·SFTP는 저장소 식별값·전체 경로·크기·수정시각으로 약한 ETag를 만듭니다. 같은 크기·수정시각으로 덮어쓴 내용까지 구분하는 내용 해시는 아닙니다. 세부 조건부 요청 및 ZIP 한계는 [구조 문서](docs/ARCHITECTURE.md#내부-연결)를 참고하세요.
 

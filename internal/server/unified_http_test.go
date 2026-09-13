@@ -195,7 +195,7 @@ func TestUnifiedRulesFirstMatchAndZeroBrowserTTL(t *testing.T) {
 	defer a.Shutdown()
 	for _, query := range []string{"?b=2&a=1", "?a=1&b=2"} {
 		w := call(a, "GET", "/docs/a.txt"+query, nil)
-		if w.Code != 200 || w.Header().Get("Cache-Control") != "public, max-age=0" || w.Header().Get("Set-Cookie") != "" {
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "public, max-age=0, s-maxage=3600" || w.Header().Get("Set-Cookie") != "" {
 			t.Fatal(w.Code, w.Header())
 		}
 	}

@@ -50,11 +50,18 @@ func TestFileHeadersAcrossModesCacheAndAuthentication(t *testing.T) {
 					if auth {
 						h.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("viewer:secret")))
 					}
+					// browser_ttl becomes max-age; mori's own TTL becomes
+					// s-maxage, but only while it actually caches the body and
+					// only for a deployment a shared cache may serve.
 					wantCC := "public, max-age=120"
-					if mode == "browser" {
-						wantCC = "private, no-store"
-					} else if auth {
+					if cache {
+						wantCC += ", s-maxage=3600"
+					}
+					if auth {
 						wantCC = "private, max-age=120"
+						if mode == "browser" {
+							wantCC = "private, no-store"
+						}
 					}
 					var tag, disposition string
 					for _, method := range []string{"GET", "GET", "HEAD"} {
@@ -147,5 +154,65 @@ func TestMissingTimestampDoesNotCacheSyntheticVersion(t *testing.T) {
 	}
 	if w := call(a, "GET", "/docs/a.txt", http.Header{"If-None-Match": {"*"}}); w.Code != 304 {
 		t.Fatal("existence wildcard must not require a modification timestamp", w.Code)
+	}
+}
+
+// A cache placed in front of mori can only work if mori says the response may
+// be shared. s-maxage carries mori's own lifetime for the object, so the shared
+// cache holds it exactly as long as mori would, and Age tells a cache that
+// received the response late how much of that window is left.
+func TestSharedCacheFreshness(t *testing.T) {
+	fixture := func(t *testing.T, auth bool, control string, rules []objectcache.CacheRule) *App {
+		t.Helper()
+		_, m, c := unifiedFixture(t, "browser", true)
+		c.ObjectCache.CacheRules = rules
+		if auth {
+			c.Username, c.Password = "viewer", "secret"
+		}
+		a, err := Open(c, &httpMemory{memBackend: m, control: control})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(a.Shutdown)
+		return a
+	}
+	credentials := http.Header{"Authorization": {"Basic " + base64.StdEncoding.EncodeToString([]byte("viewer:secret"))}}
+	hour := []objectcache.CacheRule{{BrowserTTL: "2m"}}
+
+	// Public: the browser keeps it for browser_ttl, a shared cache for mori's own TTL.
+	w := call(fixture(t, false, "", hour), "GET", "/docs/a.txt", nil)
+	if got := w.Header().Get("Cache-Control"); got != "public, max-age=120, s-maxage=3600" {
+		t.Fatal("public deployment is not shareable", got)
+	}
+	if w.Header().Get("Age") == "" {
+		t.Fatal("no Age, so a shared cache cannot tell how much freshness is left")
+	}
+
+	// Basic auth: the response belongs to one visitor and is never stored.
+	w = call(fixture(t, true, "", hour), "GET", "/docs/a.txt", credentials)
+	if got := w.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatal("authenticated file was made cacheable", got)
+	}
+
+	// An error body belongs to the request that produced it, public or not.
+	w = call(fixture(t, false, "", hour), "GET", "/missing.txt", nil)
+	if w.Code != 404 {
+		t.Fatal(w.Code)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatal("error page was made cacheable", got)
+	}
+
+	// Without a browser_ttl rule mori adds only what the origin left unsaid.
+	w = call(fixture(t, false, "", nil), "GET", "/docs/a.txt", nil)
+	if got := w.Header().Get("Cache-Control"); got != "public, s-maxage=3600" {
+		t.Fatal(got)
+	}
+	// An origin that asked not to be shared is not overruled.
+	for _, control := range []string{"no-store", "private, max-age=60", "no-cache", "public, s-maxage=30"} {
+		w = call(fixture(t, false, control, nil), "GET", "/docs/a.txt", nil)
+		if got := w.Header().Get("Cache-Control"); got != control {
+			t.Errorf("origin said %q, mori sent %q", control, got)
+		}
 	}
 }
