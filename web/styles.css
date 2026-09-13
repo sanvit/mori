@@ -37,10 +37,10 @@ table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 
 .size-col { width: 118px; }
 .action-col { width: 51px; }
 th { text-align: left; font-weight: 400; height: 45px; padding: 0 13px; border-bottom: 1px solid #e4e9ec; color: #71808c; }
-th button { padding: 6px 0; background: none; color: inherit; border: 0; }
-th button, .mobile-sort select { font-family: inherit; font-size: 11px; font-weight: 400; letter-spacing: .02em; }
+th button, th .sort-link { display: inline-block; padding: 6px 0; background: none; color: inherit; border: 0; cursor: pointer; text-decoration: none; }
+th button, th .sort-link, .mobile-sort select { font-family: inherit; font-size: 11px; font-weight: 400; letter-spacing: .02em; }
 th[aria-sort="ascending"] button, th[aria-sort="descending"] button { color: #566774; }
-th button:hover { color: var(--accent); }
+th button:hover, th .sort-link:hover { color: var(--accent); }
 .sort-mark { display: inline-block; width: 14px; margin-left: 5px; font-size: 12px; }
 th.size-cell, td.size-cell { text-align: right; }
 td { height: 51px; padding: 0 13px; border-bottom: 1px solid var(--line); }
@@ -148,7 +148,7 @@ tr.selected { background: #f1f7fb; }
   input[type="checkbox"] { width: 16px; height: 16px; }
   th { height: 42px; }
   th .check-hit { min-height: 42px; }
-  th button { min-height: 42px; }
+  th button, th .sort-link { min-height: 42px; }
   td { height: 68px; padding: 0 5px; }
   .entry-link { min-height: 67px; gap: 10px; padding: 8px 0; }
   .entry-name { font-size: 14px; white-space: normal; overflow-wrap: anywhere; line-height: 1.65; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -165,3 +165,9 @@ tr.selected { background: #f1f7fb; }
   #load-more { min-height: 44px; }
   footer { font-size: 11px; margin: 18px 5px 0; }
 }
+
+/* Icons come from the inline sprite so the server and the browser emit the
+   same markup instead of each carrying its own copy of the path data. */
+.sprite { display: none; }
+.icon { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.icon .fill { fill: currentColor; fill-opacity: .12; }

@@ -83,13 +83,17 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.serve(w, r)
 }
 
-func (a *App) serveBrowser(w http.ResponseWriter, r *http.Request) {
+func (a *App) browserHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 	w.Header().Set("Content-Security-Policy", a.contentSecurityPolicy())
 	w.Header().Set("Cache-Control", "private, no-store")
+}
+
+func (a *App) serveBrowser(w http.ResponseWriter, r *http.Request) {
+	a.browserHeaders(w)
 	if r.Method != "GET" && r.Method != "HEAD" && !(r.Method == "POST" && r.URL.Path == "/_mori/api/archive") {
 		w.Header().Set("Allow", "GET, HEAD")
 		fail(w, 405, "method_not_allowed", "읽기 전용 브라우저입니다.")
@@ -115,7 +119,7 @@ func (a *App) serveBrowser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.withSlot(w, r, a.archive)
-	case "/", "/_mori/assets/app.js", "/_mori/assets/styles.css", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/favicon.svg":
+	case "/_mori/assets/app.js", "/_mori/assets/styles.css", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/favicon.svg":
 		a.static(w, r)
 	default:
 		if strings.HasPrefix(r.URL.Path, "/_mori/vendor/") {
@@ -168,37 +172,38 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, value)
 }
 
-// upstreamFail maps a storage error to a JSON response. Error codes keep their
-// original s3_ names for API compatibility; messages name the configured backend.
-func (a *App) upstreamFail(w http.ResponseWriter, e error) {
+// upstreamError maps a storage error to the status, code and wording mori
+// reports. The JSON API and the rendered listing both read it, so a failure is
+// described the same way whichever one the reader is looking at. Error codes
+// keep their original s3_ names for API compatibility.
+func (a *App) upstreamError(e error) (int, string, string) {
 	var u *backend.UpstreamError
 	if errors.As(e, &u) {
 		switch u.Status {
 		case 403:
 			log.Printf("upstream denied backend=%s code=%q", a.cfg.Backend, u.Code)
 			if a.s3 != nil {
-				fail(w, 403, "s3_access_denied", "S3 접근이 거부되었습니다. 버킷·리전·자격 증명과 ListBucket/GetObject 권한을 확인해 주세요.")
-			} else {
-				fail(w, 403, "s3_access_denied", a.backendName()+" 접근이 거부되었습니다. 주소·계정·권한을 확인해 주세요.")
+				return 403, "s3_access_denied", "S3 접근이 거부되었습니다. 버킷·리전·자격 증명과 ListBucket/GetObject 권한을 확인해 주세요."
 			}
-			return
+			return 403, "s3_access_denied", a.backendName() + " 접근이 거부되었습니다. 주소·계정·권한을 확인해 주세요."
 		case 404:
-			fail(w, 404, "s3_not_found", "폴더 또는 파일을 찾을 수 없습니다.")
-			return
+			return 404, "s3_not_found", "폴더 또는 파일을 찾을 수 없습니다."
 		case 412:
-			fail(w, 409, "object_changed", "파일이 변경되었습니다. 새로고침 후 다시 시도해 주세요.")
-			return
+			return 409, "object_changed", "파일이 변경되었습니다. 새로고침 후 다시 시도해 주세요."
 		case 416:
-			fail(w, 416, "invalid_range", "요청한 파일 범위가 올바르지 않습니다.")
-			return
+			return 416, "invalid_range", "요청한 파일 범위가 올바르지 않습니다."
 		}
 	}
 	if errors.Is(e, context.DeadlineExceeded) {
-		fail(w, 504, "s3_timeout", a.backendName()+" 응답 시간이 초과되었습니다.")
-		return
+		return 504, "s3_timeout", a.backendName() + " 응답 시간이 초과되었습니다."
 	}
 	log.Printf("upstream error backend=%s type=%T", a.cfg.Backend, e)
-	fail(w, 502, "s3_unavailable", "저장소에 연결할 수 없습니다. 서버 설정과 "+a.backendName()+" 주소를 확인해 주세요.")
+	return 502, "s3_unavailable", "저장소에 연결할 수 없습니다. 서버 설정과 " + a.backendName() + " 주소를 확인해 주세요."
+}
+
+func (a *App) upstreamFail(w http.ResponseWriter, e error) {
+	status, code, message := a.upstreamError(e)
+	fail(w, status, code, message)
 }
 func (a *App) backendName() string {
 	switch a.cfg.Backend {

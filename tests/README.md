@@ -6,7 +6,7 @@ Go의 패키지 내부 테스트는 테스트 대상 코드 옆의 `*_test.go`�
 |---|---|
 | `integration/` | 실제 바이너리 HTTP 및 Compose 설정 검사 |
 | `e2e/` | 브라우저 HTTP, 실제 뷰어·저장소·Docker 검사 |
-| `ui/` | 모의 응답을 사용하는 UI/DOM 검사 |
+| `ui/` | 실행 중인 mori의 렌더링 결과에 대한 UI/DOM 검사 (뷰어·아카이브 응답만 대역) |
 | `unit/` | Python 도구 단위 테스트 |
 | `fixtures/` | 공통 S3 HTTP 대역, 서명 fixture와 생성기 |
 

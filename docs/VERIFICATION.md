@@ -14,7 +14,7 @@
 | WebDAV validator | HEAD 지원/미지원 × native strong/weak/누락/잘못된 ETag, PROPFIND 목록·Stat·HEAD 식별자 일치와 원본 캐시 헤더 유지 |
 | HTTP/2 늦은 원본 검증 | FTP형 느린 최종 Stat 이전에 전체 응답을 완료하지 않음, 변경 감지 시 스트림 실패·캐시 무효화·재시도 |
 | 실제 바이너리 HTTP 검사 | S3 모의 서버, 목록·HEAD·Range·오류, proxy/presigned 네 가지 조합, 독립 서명 검증 |
-| 목록·ZIP UI | 정렬·선택·페이지·취소·오류, ZIP 비활성화와 모바일 선택 바 |
+| 목록·ZIP UI | 실행 중인 mori를 상대로 서버 렌더링 목록·정렬·선택·페이지 이어 붙이기·취소·오류, ZIP 비활성화와 모바일 선택 바 |
 | 재귀 ZIP | 하위 1,005개 파일의 페이지 순회, Store/CRC·빈 폴더·상대 경로·한도·CSRF·일회용 token·변경 감지 |
 | UI/DOM 미리보기 | 모바일 레이아웃·이미지 맞춤·텍스트 제한·포커스·Esc·뒤로 가기·요청 및 미디어/PDF 정리 |
 | 실제 Chromium 뷰어 | PDF.js worker·연속 스크롤·proxy/presigned, Media Chrome 오디오 |

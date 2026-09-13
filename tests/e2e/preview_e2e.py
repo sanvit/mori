@@ -110,8 +110,10 @@ def main():
                         expect(page.locator('.file-row')).not_to_have_count(0)
                         for _ in range(20):
                             more=page.locator('#load-more')
-                            if not more.is_visible(): break
-                            more.click(); expect(page.locator('#refresh')).to_be_enabled()
+                            if not more.count() or not more.is_visible(): break
+                            before=page.locator('.file-row').count()
+                            more.click()
+                            page.wait_for_function('(n) => !document.getElementById("load-more") || document.querySelectorAll(".file-row").length > n', arg=before)
                         def open_file(name):
                             page.locator(f'tr[data-key="{name}"] .entry-link').click()
                             expect(page.locator('#preview')).to_be_visible()

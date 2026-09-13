@@ -115,7 +115,9 @@ func TestPreviewCSPAndAssetRouting(t *testing.T) {
 		}
 	}
 	a := New(testConfig())
-	for _, route := range []string{"/", "/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/app.js", "/_mori/assets/styles.css"} {
+	// "/" is a rendered listing, not an embedded file; only the assets it pulls
+	// in are static and revalidated by ETag.
+	for _, route := range []string{"/_mori/assets/preview.js", "/_mori/assets/preview.css", "/_mori/assets/app.js", "/_mori/assets/styles.css"} {
 		w := call(a, "GET", route, nil)
 		if w.Code != 200 || w.Body.Len() == 0 || w.Header().Get("ETag") == "" {
 			t.Fatal(route, w.Code)

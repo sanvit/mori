@@ -28,7 +28,7 @@ docker compose up --build -d
 
 | SERVE_MODE | / | 파일 URL | 누락된 HTML 탐색 |
 |---|---|---|---|
-| browser (기본) | 기존 파일 브라우저 | /폴더/파일 | 404 |
+| browser (기본) | 서버가 렌더링한 파일 목록 | /폴더/파일 | 404 |
 | spa | 원본 index.html | /폴더/파일 | SPA_INDEX로 fallback |
 | direct | 원본 index.html | /폴더/파일 | 404 |
 
@@ -36,7 +36,7 @@ docker compose up --build -d
 
 인증된 SPA/direct란 `BROWSER_USERNAME`·`BROWSER_PASSWORD`로 mori의 Basic 인증을 설정한 경우입니다(`AUTH_MODE=basic`으로 명시 가능). 저장소의 S3 키·FTP 계정과는 별개입니다. `AUTH_MODE=public`은 명시적으로 공개합니다. 여기서 browser 파일은 browser 모드에서 제공하는 **저장소 파일**이며 UI의 JS/CSS를 뜻하지 않습니다.
 
-내부 API는 `/_mori/api/`, UI는 `/_mori/assets/`, 뷰어 리소스는 `/_mori/vendor/`입니다. `/_mori/`는 예약 공간이고 기존 `/api/`, `/app.js` 등은 저장소 파일 경로로 사용할 수 있습니다. 브라우저 UI의 파일 링크·미리보기·다운로드도 이 파일 경로를 사용하므로 한 파일은 한 URL을 가집니다. `/_mori/api/object?key=…`는 예약 경로와 충돌하는 파일을 읽는 용도로 남아 있습니다. browser 모드의 파일 경로는 `?download=1`로 첨부 다운로드를 요청할 수 있고, object API와 같은 `BROWSER_DOWNLOAD_MODE`·`BROWSER_PREVIEW_MODE` 전달 설정을 따릅니다. `download` 값은 표시 방식만 바꾸며 캐시 키에는 들어가지 않으므로 같은 본문을 두 번 저장하지 않습니다. presigned로 설정하면 파일 경로도 307로 저장소에 넘기며, 그 요청은 내부 캐시와 사용자 오류 페이지를 거치지 않습니다. HEAD와 HTML 미리보기는 언제나 mori를 경유합니다. spa/direct의 파일 경로는 사이트 그 자체이므로 presign하지 않습니다. SPA/direct는 목록·미리보기·ZIP API를 노출하지 않으며 정확한 object API만 유지합니다.
+내부 API는 `/_mori/api/`, UI는 `/_mori/assets/`, 뷰어 리소스는 `/_mori/vendor/`입니다. `/_mori/`는 예약 공간이고 기존 `/api/`, `/app.js` 등은 저장소 파일 경로로 사용할 수 있습니다. 브라우저 UI의 파일 링크·미리보기·다운로드도 이 파일 경로를 사용하므로 한 파일은 한 URL을 가집니다. 폴더는 `/폴더/`처럼 끝에 `/`가 붙은 경로이고, **서버가 목록 HTML을 완성해서 보냅니다.** JavaScript 없이도 `curl`이나 에이전트가 그대로 읽고 링크를 따라 탐색할 수 있습니다. 정렬(`?sort=size&dir=desc`)과 다음 페이지(`?cursor=…`)도 링크입니다. 브라우저에서는 같은 HTML 위에 선택·ZIP·미리보기·즉시 정렬이 얹히고, "더 불러오기"는 다음 페이지를 **서버에서 렌더링된 그대로 가져와 이어 붙입니다** — 목록을 그리는 코드는 서버 한 곳에만 있습니다. 이전의 `#/폴더/` 주소는 실제 경로로 리다이렉트합니다. `/_mori/api/object?key=…`는 예약 경로와 충돌하는 파일을 읽는 용도로 남아 있습니다. browser 모드의 파일 경로는 `?download=1`로 첨부 다운로드를 요청할 수 있고, object API와 같은 `BROWSER_DOWNLOAD_MODE`·`BROWSER_PREVIEW_MODE` 전달 설정을 따릅니다. `download` 값은 표시 방식만 바꾸며 캐시 키에는 들어가지 않으므로 같은 본문을 두 번 저장하지 않습니다. presigned로 설정하면 파일 경로도 307로 저장소에 넘기며, 그 요청은 내부 캐시와 사용자 오류 페이지를 거치지 않습니다. HEAD와 HTML 미리보기는 언제나 mori를 경유합니다. spa/direct의 파일 경로는 사이트 그 자체이므로 presign하지 않습니다. SPA/direct는 목록·미리보기·ZIP API를 노출하지 않으며 정확한 object API만 유지합니다.
 
 `INDEX_DOCUMENT` 미설정 기본은 browser에서 빈 값, spa/direct에서 index.html입니다. 명시적으로 비우면 디렉터리 인덱스를 끕니다. `SPA_INDEX`, `SPA_ALLOW_DOTTED_ROUTES`, `ERROR_PAGE_404`, `ERROR_PAGES_JSON`으로 사이트 동작을 설정합니다. object API와 ZIP의 오류는 SPA/사용자 HTML로 대체하지 않습니다. 전체 대응표는 [구조 문서](docs/ARCHITECTURE.md)를 참고하세요.
 

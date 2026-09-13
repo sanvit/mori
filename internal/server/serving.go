@@ -97,7 +97,22 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if a.cfg.ServeMode == "browser" && (r.URL.Path == "/" || internal) {
+	// A folder has no object body, so in browser mode a path ending in "/" is
+	// the listing itself. Every link the listing emits keeps that slash, which
+	// is what separates a folder from a file of the same name.
+	if a.cfg.ServeMode == "browser" && !internal && strings.HasSuffix(r.URL.Path, "/") {
+		if r.Method != "GET" && r.Method != "HEAD" {
+			w.Header().Set("Allow", "GET, HEAD")
+			w.WriteHeader(405)
+			return
+		}
+		a.browserHeaders(w)
+		a.withSlot(w, r, func(w http.ResponseWriter, r *http.Request) {
+			a.serveListing(w, r, strings.TrimPrefix(r.URL.Path, "/"))
+		})
+		return
+	}
+	if a.cfg.ServeMode == "browser" && internal {
 		a.serveBrowser(w, r)
 		return
 	}

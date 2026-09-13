@@ -2,13 +2,19 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
-from http.server import BaseHTTPRequestHandler
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, urlencode, quote
 from unittest.mock import patch
 import hashlib
 import hmac
+import os
 import socket
+import subprocess
+import tempfile
 import threading
+import time
+import urllib.request
 from xml.sax.saxutils import escape
 from botocore.auth import S3SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
@@ -28,6 +34,7 @@ EVENTS = []
 ERRORS = []
 LOCK = threading.Lock()
 FAIL_LIST = False
+PAGE_SIZE = 2
 
 class S3Fixture(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -108,7 +115,7 @@ class S3Fixture(BaseHTTPRequestHandler):
                     grouped[key] = False
             names = sorted(grouped)
             start = int(q.get('continuation-token', ['0'])[0])
-            end = min(start + 2, len(names))  # S3 may return fewer than MaxKeys.
+            end = min(start + PAGE_SIZE, len(names))  # S3 may return fewer than MaxKeys.
             xml = '<ListBucketResult><EncodingType>url</EncodingType>'
             for key in names[start:end]:
                 if grouped[key]:
@@ -136,3 +143,62 @@ def free_port():
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
+
+_BUILD = []
+
+def _binary():
+    """Build mori once per process; several servers reuse the one binary."""
+    if os.getenv('MORI_TEST_BINARY'):
+        return Path(os.environ['MORI_TEST_BINARY'])
+    if not _BUILD:
+        directory = tempfile.mkdtemp(prefix='mori-build-')
+        path = Path(directory) / 'mori'
+        subprocess.run(['go', 'build', '-o', str(path), './cmd/mori'], cwd=ROOT, check=True)
+        _BUILD.append(path)
+    return _BUILD[0]
+
+@contextmanager
+def serve(data=None, page_size=None, **settings):
+    """Build mori, run it against this fixture, and yield its base URL.
+
+    Listings are rendered by the server now, so a browser check cannot stand up
+    a page by stubbing fetch; it needs the real handler. Both the UI and the
+    end-to-end suites start it the same way from here.
+    """
+    global DATA, PAGE_SIZE
+    original_data, original_page = DATA, PAGE_SIZE
+    if data is not None:
+        DATA = data
+    if page_size is not None:
+        PAGE_SIZE = page_size
+    with tempfile.TemporaryDirectory(prefix='mori-test-') as tmp:
+        binary = _binary()
+        fixture = ThreadingHTTPServer(('127.0.0.1', 0), S3Fixture)
+        threading.Thread(target=fixture.serve_forever, daemon=True).start()
+        port = free_port()
+        base_url = f'http://127.0.0.1:{port}'
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('BROWSER_', 'S3_', 'CACHE_', 'SERVE_', 'AUTH_'))}
+        env.update(
+            BROWSER_LISTEN_ADDR=f'127.0.0.1:{port}', BROWSER_TITLE='Files', BROWSER_PUBLIC='true',
+            BROWSER_LIST_TTL='0s', CACHE_MODE='off',
+            S3_ENDPOINT=f'http://127.0.0.1:{fixture.server_port}', S3_BUCKET='test-bucket', S3_PREFIX='public/',
+            S3_REGION='ap-northeast-2', S3_FORCE_PATH_STYLE='true', S3_ACCESS_KEY_ID='TESTACCESS',
+            S3_SECRET_ACCESS_KEY='test-secret-key', S3_SESSION_TOKEN='',
+        )
+        env.update({k: str(v) for k, v in settings.items()})
+        process = subprocess.Popen([str(binary)], cwd=tmp, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            for _ in range(200):
+                try:
+                    with urllib.request.urlopen(base_url + '/_mori/healthz', timeout=.2):
+                        break
+                except OSError:
+                    time.sleep(.05)
+            else:
+                raise RuntimeError('mori did not start: ' + (process.stderr.read().decode() if process.stderr else ''))
+            yield base_url
+        finally:
+            process.terminate()
+            process.wait(timeout=10)
+            fixture.shutdown()
+            DATA, PAGE_SIZE = original_data, original_page

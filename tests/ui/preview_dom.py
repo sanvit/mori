@@ -10,14 +10,41 @@ MORI_TEST_SCREENSHOTS=/path saves list/image-only fixture screenshots.
 import os
 from pathlib import Path
 import shutil
+import urllib.request
+
+from tests.fixtures import s3 as source
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[2]
-html=(ROOT/'web/index.html').read_text()
-for script in ('app.js','preview.js'):
-    html=html.replace(f'<script src="/_mori/assets/{script}" defer></script>','')
-for css in ('styles.css','preview.css'):
-    html=html.replace(f'<link rel="stylesheet" href="/_mori/assets/{css}">','<style>'+(ROOT/'web'/css).read_text()+'</style>')
-html=html.replace('<link rel="icon" href="/_mori/assets/favicon.svg" type="image/svg+xml">','')
+# The listing is rendered by the server, so the page under test is the real one:
+# fetched once from mori over this file set, then driven offline with doubles.
+PREVIEW_FILES={
+    'public/Archive/keep.txt': b'x',
+    'public/Photos/keep.txt': b'x',
+    'public/01-mountains.jpg': b'x'*1536000,
+    'public/02-film.mp4': b'x'*3590,
+    'public/03-soundtrack.mp3': b'x'*4567,
+    'public/04-guide.pdf': b'x'*243,
+    'public/05-README.md': b'x'*512,
+    'public/06-large.log': b'x'*6291456,
+    'public/07-locked.pdf': b'x'*1200,
+    'public/08-package.zip': b'x'*2300,
+    'public/Empty/': b'',
+}
+def offline(page):
+    for script in ('app.js','preview.js'):
+        page=page.replace(f'<script src="/_mori/assets/{script}" defer></script>','')
+    for css in ('styles.css','preview.css'):
+        page=page.replace(f'<link rel="stylesheet" href="/_mori/assets/{css}">','<style>'+(ROOT/'web'/css).read_text()+'</style>')
+    return page.replace('<link rel="icon" href="/_mori/assets/favicon.svg" type="image/svg+xml">','')
+
+def rendered_pages(*paths):
+    with source.serve(data=PREVIEW_FILES, page_size=50) as base:
+        pages=[]
+        for path in paths:
+            with urllib.request.urlopen(base + path) as response:
+                pages.append(offline(response.read().decode()))
+        return pages
+html, empty_html = rendered_pages('/', '/Empty/')
 fixtures=r'''() => {
   window.calls=[]; window.textCancelled=0; window.pdfDestroyed=0; window.pdfCancelled=0; window.pdfOptions=[]; window.pdfTextFailure=false; window.pdfTextLarge=false; window.pdfTextCancelled=0;
   delete ReadableStream.prototype[Symbol.asyncIterator];
@@ -236,8 +263,10 @@ with sync_playwright() as p:
     page.evaluate('history.back()')
     expect(page.locator('#preview')).not_to_be_visible()
     assert not page.evaluate('document.body.classList.contains("preview-open")')
-    page.evaluate('entries=[]')
-    page.locator('#refresh').click()
+    # An empty folder is its own rendered page; check that its one cell still
+    # spans the table at every width.
+    page.set_content(empty_html)
+    page.add_script_tag(content=(ROOT/'web/app.js').read_text())
     expect(page.locator('#files .message')).to_be_visible()
     for width in (320, 390, 1360, 360):
         page.set_viewport_size({'width':width,'height':844})

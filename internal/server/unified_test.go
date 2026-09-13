@@ -235,3 +235,64 @@ func TestFilePathAndObjectAPIAgreeOnHeaders(t *testing.T) {
 		})
 	}
 }
+
+// The listing is complete HTML before any script runs, so a terminal, a
+// crawler or an agent sees the same folder a person does and can walk it by
+// following links alone.
+func TestListingIsUsableWithoutScripting(t *testing.T) {
+	a, m, _ := unifiedFixture(t, "browser", true)
+	m.files["docs/한글 +&.txt"] = "hi"
+
+	root := call(a, "GET", "/", nil)
+	if root.Code != 200 {
+		t.Fatal(root.Code)
+	}
+	body := root.Body.String()
+	for _, want := range []string{`href="/docs/"`, `href="/a..b"`, `href="/a..b?download=1"`, `<title>Test</title>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("root listing is missing %s", want)
+		}
+	}
+	if strings.Contains(body, "#/") {
+		t.Error("listing still routes folders through the fragment")
+	}
+
+	// Following the folder link alone reaches the folder, with a way back up.
+	docs := call(a, "GET", "/docs/", nil)
+	if docs.Code != 200 {
+		t.Fatal(docs.Code)
+	}
+	body = docs.Body.String()
+	for _, want := range []string{`href="/docs/a.txt"`, `href="/"`, `<title>/docs/ · Test</title>`, "0개 폴더 · 3개 파일"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("folder listing is missing %s", want)
+		}
+	}
+	// A name needing escaping survives the round trip through its own link.
+	escaped := objectPath("docs/한글 +&.txt", false)
+	if !strings.Contains(body, `href="`+escaped+`"`) {
+		t.Fatalf("escaped name is not linked as %s", escaped)
+	}
+	if got := call(a, "GET", escaped, nil); got.Code != 200 || got.Body.String() != "hi" {
+		t.Fatal("linked path does not resolve", got.Code, got.Body.String())
+	}
+
+	// Column headers order the listing without scripting.
+	desc := call(a, "GET", "/docs/?sort=size&dir=desc", nil)
+	if desc.Code != 200 {
+		t.Fatal(desc.Code)
+	}
+	first := strings.Index(desc.Body.String(), `data-key="docs/a.txt"`)
+	second := strings.Index(desc.Body.String(), `data-key="docs/index.html"`)
+	if first < 0 || second < 0 || first > second {
+		t.Error("size ordering was not applied server-side")
+	}
+
+	// A folder is not reachable as an object, and a file is not a folder.
+	if got := call(a, "GET", "/docs", nil); got.Code == 200 {
+		t.Error("folder served as an object body")
+	}
+	if got := call(a, "GET", "/docs/a.txt/", nil); got.Code == 200 {
+		t.Error("file served as a folder listing")
+	}
+}
