@@ -6,6 +6,7 @@ fetch, media elements or library imports. Failure/skip must not count as a pass.
 Run python3 -m tests.e2e.preview_e2e on a machine permitting local browser navigation.
 """
 from pathlib import Path
+from urllib.parse import urlparse
 import base64
 import io
 import math
@@ -161,8 +162,8 @@ def main():
                         expect(page.locator('.markdown-content strong')).to_have_text('bold')
                         expect(page.locator('.markdown-content img')).to_have_count(1)
                         expect(page.locator('.markdown-content img')).to_have_js_property('naturalWidth',1)
-                        assert 'key=03-image.png' in page.locator('.markdown-content img').get_attribute('src')
-                        assert 'key=documents%2Fguide.txt' in page.locator('.markdown-content a').get_attribute('href')
+                        assert urlparse(page.locator('.markdown-content img').get_attribute('src')).path=='/03-image.png'
+                        assert urlparse(page.locator('.markdown-content a').get_attribute('href')).path=='/documents/guide.txt'
                         assert page.locator('.markdown-content a[href^="javascript:"], .markdown-content script').count()==0
                         assert not page.evaluate('!!window.mdRan')
                         close()

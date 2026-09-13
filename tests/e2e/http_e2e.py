@@ -162,7 +162,7 @@ def main():
                         if preview_mode == 'presigned':
                             assert descriptor['url'].startswith(fixture_url) and 'X-Amz-Signature=' in descriptor['url']
                         else:
-                            assert descriptor['url'].startswith('/_mori/api/object?')
+                            assert descriptor['url'] == '/README.md'
                         page.locator('#preview-close').click()
                         expect(page.locator('#preview')).not_to_be_visible()
                         page.locator('.folder-row .entry-link').click()

@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -32,7 +31,7 @@ func (a *App) preview(w http.ResponseWriter, r *http.Request) {
 		jsonOut(w, result)
 		return
 	}
-	source := "/_mori/api/object?" + url.Values{"key": {key}}.Encode()
+	source := objectPath(key, false)
 	if a.cfg.PreviewMode == "presigned" && a.s3 != nil && !renderHTML {
 		now := time.Now()
 		var err error

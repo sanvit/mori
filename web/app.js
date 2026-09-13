@@ -82,9 +82,16 @@
     const pad = (v) => String(v).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
-  function fileURL(entry, download) {
-    return '/_mori/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) });
+  // Mirrors the server's objectPath: one object, one URL, one cache entry.
+  function objectURL(key, download) {
+    if (key === '_mori' || key.startsWith('_mori/')) {
+      const q = new URLSearchParams({ key });
+      if (download) q.set('download', '1');
+      return '/_mori/api/object?' + q;
+    }
+    return '/' + key.split('/').map(encodeURIComponent).join('/') + (download ? '?download=1' : '');
   }
+  function fileURL(entry, download) { return objectURL(entry.key, download); }
   async function api(route, params, signal) {
     const response = await fetch('/_mori/api/' + route + '?' + new URLSearchParams(params || {}), { signal, cache: 'no-store', credentials: 'same-origin' });
     const data = await response.json().catch(() => ({}));

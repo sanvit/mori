@@ -46,7 +46,7 @@ func TestPreviewSourceModesAndNoOriginBodyRead(t *testing.T) {
 			t.Fatal(err)
 		}
 		if mode == "proxy" {
-			if u.Host != "" || u.Path != "/_mori/api/object" || u.Query().Get("key") != key {
+			if u.Host != "" || u.Path != "/"+key || u.RawQuery != "" {
 				t.Fatal(u)
 			}
 		} else {
@@ -183,5 +183,35 @@ func TestHTMLRenderingOption(t *testing.T) {
 				t.Fatal(w.Header())
 			}
 		}
+	}
+}
+
+// The UI builds object links itself, so its encoding and the descriptor's must
+// agree exactly. A mismatch still resolves to the same object here but splits
+// it into two entries in the browser cache and in any cache in front of mori.
+// These expectations are what encodeURIComponent produces for each segment.
+func TestObjectPathMatchesBrowserEncoding(t *testing.T) {
+	for _, tc := range []struct{ key, want string }{
+		{"plain.txt", "/plain.txt"},
+		{"docs/a b.txt", "/docs/a%20b.txt"},
+		{"한글.txt", "/%ED%95%9C%EA%B8%80.txt"},
+		{"a+b.txt", "/a%2Bb.txt"},
+		{"q?x.txt", "/q%3Fx.txt"},
+		{"hash#1.txt", "/hash%231.txt"},
+		{"pct%20.txt", "/pct%2520.txt"},
+		{"amp&eq=.txt", "/amp%26eq%3D.txt"},
+		{"brack[1].txt", "/brack%5B1%5D.txt"},
+		{"keep-_.!~*'().txt", "/keep-_.!~*'().txt"},
+	} {
+		if got := objectPath(tc.key, false); got != tc.want {
+			t.Errorf("objectPath(%q) = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+	if got := objectPath("docs/a b.txt", true); got != "/docs/a%20b.txt?download=1" {
+		t.Error(got)
+	}
+	// The reserved prefix has no path form and keeps the exact-key API.
+	if got := objectPath("_mori/x.txt", true); got != "/_mori/api/object?key=_mori%2Fx.txt&download=1" {
+		t.Error(got)
 	}
 }

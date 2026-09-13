@@ -44,7 +44,16 @@
   }
   function isMarkdown(name) { return /\.(md|markdown)$/i.test(name); }
   function size(n) { if (!Number.isFinite(n) || n < 0) return ''; if (n < 1024) return n + ' B'; const p = Math.min(4, Math.floor(Math.log2(n) / 10)); return (n / 1024 ** p).toFixed(1) + ' ' + ['B', 'KiB', 'MiB', 'GiB', 'TiB'][p]; }
-  function objectURL(entry, download = false) { return '/_mori/api/object?' + new URLSearchParams({ key: entry.key, ...(download ? { download: '1' } : {}) }); }
+  // Mirrors the server's objectPath: one object, one URL, one cache entry.
+  function entryURL(entry, download = false) {
+    const key = entry.key;
+    if (key === '_mori' || key.startsWith('_mori/')) {
+      const q = new URLSearchParams({ key });
+      if (download) q.set('download', '1');
+      return '/_mori/api/object?' + q;
+    }
+    return '/' + key.split('/').map(encodeURIComponent).join('/') + (download ? '?download=1' : '');
+  }
   function current(s) { return active === s && !s.abort.signal.aborted && dialog.open; }
   function cleanup() {
     const s = active; active = null;
@@ -79,7 +88,7 @@
     box.append(svg(s.kind === 'audio' ? 'music' : 'file', 'message-icon'), el('h3', '', heading), el('p', '', detail));
     const actions = el('div', 'message-actions');
     if (retry) actions.append(button('다시 불러오기', () => show(s.entry), null, 'preview-button'));
-    const link = el('a', 'preview-button', '다운로드'); link.href = objectURL(s.entry, true); link.download = s.entry.name;
+    const link = el('a', 'preview-button', '다운로드'); link.href = entryURL(s.entry, true); link.download = s.entry.name;
     actions.append(link); box.append(actions); body.replaceChildren(box);
   }
   function error(s, heading = '미리보기를 불러오지 못했습니다.') {
@@ -95,7 +104,7 @@
       const source = new URL(value.url, location.href);
       if (!['http:', 'https:'].includes(source.protocol) || source.username || source.password) throw new Error('invalid source');
       // Even a malformed helper response cannot forward the site's credentials.
-      if (value.mode !== 'presigned' && (source.origin !== location.origin || source.pathname !== '/_mori/api/object')) throw new Error('invalid proxy source');
+      if (value.mode !== 'presigned' && source.origin !== location.origin) throw new Error('invalid proxy source');
     }
     return value;
   }
@@ -106,8 +115,8 @@
     dialog.dataset.kind = s.kind;
     $('preview-title').textContent = entry.name;
     $('preview-meta').textContent = [labels[s.kind], size(entry.size)].filter(Boolean).join(' · ');
-    $('preview-download').href = objectURL(entry, true); $('preview-download').download = entry.name;
-    $('preview-original').href = objectURL(entry);
+    $('preview-download').href = entryURL(entry, true); $('preview-download').download = entry.name;
+    $('preview-original').href = entryURL(entry);
     const loading = el('div', 'preview-message'); loading.append(el('span', 'spinner'), el('p', '', '불러오는 중…'));
     body.replaceChildren(loading); body.setAttribute('aria-busy', 'true'); navigation();
     try {
@@ -258,7 +267,7 @@
       }
       const objectKey = target.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
       if (!objectKey || objectKey.endsWith('/') || objectKey.includes('\\') || /[\x00-\x1f\x7f]/.test(objectKey) || objectKey.split('/').some(part => !part || part === '.' || part === '..')) return '';
-      return objectURL({ key: objectKey });
+      return entryURL({ key: objectKey });
     } catch { return ''; }
   }
   const markdownTags = new Set('p h1 h2 h3 h4 h5 h6 blockquote pre code em strong s del ul ol li hr br a img table thead tbody tr th td'.split(' '));

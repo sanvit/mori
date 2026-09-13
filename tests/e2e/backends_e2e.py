@@ -78,7 +78,7 @@ def run(name, env):
         check(s == 206 and b == BIG[-5:], ("tail range", s))
 
         s, h, b = req("/_mori/api/preview?key=README.md"); pv = json.loads(b)
-        check(pv["kind"] == "text" and pv["mode"] == "proxy" and pv["url"] == "/_mori/api/object?key=README.md", pv)
+        check(pv["kind"] == "text" and pv["mode"] == "proxy" and pv["url"] == "/README.md", pv)
 
         body = json.dumps({"prefix": "docs/", "keys": ["docs/sub/", "docs/a.txt", "docs/big.bin"]}).encode()
         s, h, b = req("/_mori/api/archive", "POST", {"Content-Type": "application/json", "X-Mori-Request": "1"}, body)

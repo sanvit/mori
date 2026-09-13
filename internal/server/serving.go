@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -187,6 +188,51 @@ func (a *App) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}}
 	a.objects.ServeHTTP(wrapped, r)
+}
+
+// encodeSegment escapes one path segment exactly the way the browser's
+// encodeURIComponent does. A link built in the UI and a URL built here are then
+// byte-identical, so they address one entry in the browser cache and in any
+// cache placed in front of mori.
+func encodeSegment(s string) string {
+	const unreserved = "-_.!~*'()"
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte(unreserved, c) >= 0 {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&15])
+	}
+	return b.String()
+}
+
+// objectPath addresses a stored object by its own path, so one object has one
+// URL for the browser, the disk cache and anything caching in front of mori.
+// The reserved prefix has no path form, so those keys keep the object API.
+func objectPath(key string, download bool) string {
+	if key == "_mori" || strings.HasPrefix(key, "_mori/") {
+		// Written in the UI's parameter order, not sorted, so both spellings of
+		// this URL are the same string too.
+		path := "/_mori/api/object?key=" + url.QueryEscape(key)
+		if download {
+			path += "&download=1"
+		}
+		return path
+	}
+	segments := strings.Split(key, "/")
+	for i, segment := range segments {
+		segments[i] = encodeSegment(segment)
+	}
+	path := "/" + strings.Join(segments, "/")
+	if download {
+		path += "?download=1"
+	}
+	return path
 }
 
 // deliveryMode picks proxy or presigned delivery for one read. Only a plain

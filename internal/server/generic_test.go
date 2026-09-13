@@ -208,7 +208,7 @@ func TestGenericListPreviewAndPresignedFallback(t *testing.T) {
 	w = call(a, "GET", "/_mori/api/preview?key=README.md", nil)
 	var preview map[string]any
 	json.Unmarshal(w.Body.Bytes(), &preview)
-	if w.Code != 200 || preview["mode"] != "proxy" || preview["url"] != "/_mori/api/object?key=README.md" || preview["kind"] != "text" {
+	if w.Code != 200 || preview["mode"] != "proxy" || preview["url"] != "/README.md" || preview["kind"] != "text" {
 		t.Fatal(w.Code, preview)
 	}
 	for _, want := range []string{"MISS", "HIT"} {

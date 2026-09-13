@@ -87,8 +87,11 @@ with sync_playwright() as p:
     expect(page.locator('#download-zip')).not_to_be_visible()
     assert page.evaluate('downloads.length')==1
     link=page.locator('.file-row .download').get_attribute('href')
-    from urllib.parse import urlparse,parse_qs
-    assert parse_qs(urlparse(link).query)=={'key':['documents/설치 & 설정.txt'],'download':['1']}
+    from urllib.parse import urlparse,parse_qs,unquote
+    # The object is addressed by its own path; only the download flag is a query.
+    parsed=urlparse(link)
+    assert unquote(parsed.path)=='/documents/설치 & 설정.txt', link
+    assert parse_qs(parsed.query)=={'download':['1']}, link
     assert page.locator('.file-row .entry-link').get_attribute('target')=='_blank'
     assert page.locator('.parent-row input').count()==0
     assert page.locator('.file-row .download').get_attribute('title')=='S3 직접 다운로드'
@@ -138,7 +141,7 @@ with sync_playwright() as p:
     assert page.locator('input[type=checkbox], col.select-col, .select-cell').count()==0
     expect(page.locator('#selection-tools')).not_to_be_visible()
     assert page.locator('thead th').count()==page.locator('tbody tr.file-row td').count()==4
-    expect(page.locator('.file-row .download')).to_have_attribute('href', '/_mori/api/object?key=README.md&download=1')
+    expect(page.locator('.file-row .download')).to_have_attribute('href', '/README.md?download=1')
     page.evaluate("""() => { globalThis.fetch = async () => new Response(JSON.stringify({entries:[],prefix:'empty/'})); location.hash = '#/empty/'; }""")
     expect(page.locator('.message')).to_have_text('이 폴더는 비어 있습니다.')
     assert page.locator('.message').get_attribute('colspan')=='4'
