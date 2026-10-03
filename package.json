@@ -5,7 +5,7 @@
   "description": "Version pins only. tools/vendor.py copies browser assets; Node is not used at runtime.",
   "dependencies": {
     "markdown-it": "15.0.1",
-    "media-chrome": "4.19.2",
+    "media-chrome": "4.19.3",
     "pdfjs-dist": "6.3.289"
   }
 }
