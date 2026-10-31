@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/fclairamb/ftpserverlib v0.32.4
 	github.com/jlaffaye/ftp v0.2.4
-	github.com/pkg/sftp v1.13.11
+	github.com/pkg/sftp v1.13.12
 	github.com/spf13/afero v1.15.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0
